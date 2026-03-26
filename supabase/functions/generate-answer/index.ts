@@ -136,6 +136,16 @@ function calculateCost(
   };
 }
 
+// --- Service client (initialized once per cold start) ---
+
+const supabaseUrl = Deno.env.get("SUPABASE_URL");
+const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+const serviceClient = supabaseUrl && supabaseServiceKey
+  ? createClient(supabaseUrl, supabaseServiceKey)
+  : null;
+
 // --- Main handler ---
 
 Deno.serve(async (req: Request) => {
@@ -155,6 +165,18 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    // -- Env check --
+    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey || !serviceClient) {
+      console.error("Missing Supabase environment variables");
+      return new Response(
+        JSON.stringify({ error: "Server configuration error" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
     // -- Auth: extract user from JWT --
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
@@ -166,10 +188,6 @@ Deno.serve(async (req: Request) => {
         },
       );
     }
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
     const userClient = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
@@ -191,8 +209,6 @@ Deno.serve(async (req: Request) => {
     }
 
     // -- Rate limit check --
-    const serviceClient = createClient(supabaseUrl, supabaseServiceKey);
-
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const { count: recentRequests, error: countError } = await serviceClient
       .from("usage_logs")
@@ -221,7 +237,18 @@ Deno.serve(async (req: Request) => {
     }
 
     // -- Parse request body --
-    const body: RequestBody = await req.json();
+    let body: RequestBody;
+    try {
+      body = await req.json();
+    } catch {
+      return new Response(
+        JSON.stringify({ error: "Invalid JSON in request body" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
 
     if (
       !body.question || typeof body.question !== "string" ||
@@ -314,7 +341,23 @@ Deno.serve(async (req: Request) => {
     }
 
     const result: GeminiResponse = await geminiResponse.json();
-    const answerText = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+    // Handle empty/blocked responses (e.g., safety filter)
+    const candidate = result.candidates?.[0];
+    if (!candidate?.content?.parts?.[0]?.text) {
+      return new Response(
+        JSON.stringify({
+          error:
+            "AI could not generate an answer. Try rephrasing the question.",
+        }),
+        {
+          status: 422,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    const answerText = candidate.content.parts[0].text;
     const inputTokens = result.usageMetadata?.promptTokenCount || 0;
     const outputTokens = result.usageMetadata?.candidatesTokenCount || 0;
 
