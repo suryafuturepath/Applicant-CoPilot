@@ -601,7 +601,10 @@ async function fetchGemini(config, apiKey, messages, params) {
         generationConfig: {
           temperature: params.temperature,
           // Gemini uses 'maxOutputTokens' where OpenAI uses 'max_tokens'.
-          maxOutputTokens: params.maxTokens
+          maxOutputTokens: params.maxTokens,
+          // Force JSON output when possible — prevents Gemini from wrapping
+          // JSON in markdown fences or adding commentary around it.
+          responseMimeType: 'application/json'
         }
       })
     });
