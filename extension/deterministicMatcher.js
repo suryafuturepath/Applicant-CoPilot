@@ -24,16 +24,17 @@
 // "gender identity" doesn't accidentally match the broader "gender" bucket.
 
 const TOPIC_PATTERNS = {
+  // More specific gender identity questions (cis/trans identity) — must come BEFORE
+  // generic "gender" to prevent /\bgender\b/ from matching "gender identity" first.
+  gender_identity: [
+    /\bgender.?identity\b/i, /\bcisgender\b/i, /\btransgender\b/i,
+    /\bi identify as\b/i
+  ],
+
   // Standard male/female gender question — very common on job applications
   gender: [
     /\bgender\b/i, /\bsex\b/i, /\bman\b.*\bwoman\b/i,
     /\bi identify my gender\b/i, /\bmale\b.*\bfemale\b/i
-  ],
-
-  // More specific gender identity questions (cis/trans identity)
-  gender_identity: [
-    /\bgender.?identity\b/i, /\bcisgender\b/i, /\btransgender\b/i,
-    /\bi identify as\b/i
   ],
 
   // Sexual orientation EEO questions
