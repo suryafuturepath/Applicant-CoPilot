@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+*.zip
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Research repos (reference only, not tracked)
+research/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Supabase local
+supabase/.temp/
+
+# Logs
+*.log

@@ -1,0 +1,22 @@
+/* styles.css — Host element positioning for the Shadow DOM side panel */
+
+#applicant-copilot-panel-host {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 380px;
+  height: 100vh;
+  z-index: 2147483646;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  pointer-events: none;
+}
+
+#applicant-copilot-panel-host.open {
+  pointer-events: auto;
+}
+
+@media (max-width: 500px) {
+  #applicant-copilot-panel-host {
+    width: 100vw !important;
+  }
+}

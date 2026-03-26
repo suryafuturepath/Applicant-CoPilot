@@ -1,0 +1,59 @@
+{
+  "manifest_version": 3,
+  "name": "Applicant Copilot – AI-Powered Job Application Assistant",
+  "version": "0.1.0",
+  "description": "Your AI copilot for job applications. Generates tailored answers using your experience profile and job context.",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://api.anthropic.com/*",
+    "https://api.openai.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.groq.com/*",
+    "https://api.cerebras.ai/*",
+    "https://api.together.xyz/*",
+    "https://openrouter.ai/*",
+    "https://api.mistral.ai/*",
+    "https://api.deepseek.com/*",
+    "https://api.cohere.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "libs/pdf.min.js",
+        "libs/pdf.worker.min.js",
+        "libs/mammoth.browser.min.js"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}
