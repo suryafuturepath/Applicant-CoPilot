@@ -13,7 +13,7 @@ Chrome extension copilot for job applicants. Forked from JobMatchAI (MIT), enhan
 - **Extension (Week 1)**: JobMatchAI fork (vanilla JS, Manifest V3, no build step)
 - **Extension (Week 2+)**: WXT + React 19 + Tailwind CSS 4 + TypeScript + Zustand
 - **Backend**: Supabase (Auth, PostgreSQL, Storage, Edge Functions)
-- **LLM**: Multi-provider via AI service abstraction; default Claude Sonnet via Supabase Edge Functions
+- **LLM**: Gemini Flash (free tier) via Supabase Edge Functions; model-agnostic design for future upgrade to Claude
 - **Validation**: Zod for all external data
 
 ## Key Rules
@@ -38,5 +38,8 @@ Chrome extension copilot for job applicants. Forked from JobMatchAI (MIT), enhan
 - Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`
 - Feature branches: `feat/description`
 
+## Repositories
+- **GitHub**: https://github.com/suryafuturepath/Applicant-CoPilot (github)
+
 ## Current Phase
-Planning — moving to implementation plan. See PROJECT-CONTEXT.md for full context and scope.
+Phase 2 complete (Supabase backend deployed). Next: Phase 3 — Connect Extension to Backend. See PROJECT-CONTEXT.md for full status.

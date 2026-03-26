@@ -299,7 +299,38 @@ applicant-copilot/
 ---
 
 ## Current Status
-**Phase: Planning** — Foundation repos selected, project context established. Moving to implementation planning.
+**Phase 2: Complete** — Supabase backend deployed and operational.
+
+### Phase 1: Fork & Project Setup — DONE (2026-03-26)
+- Forked JobMatchAI as extension base
+- Chrome extension loads, JD extraction working
+- Deterministic EEO matcher with gender/gender_identity ordering fix
+- Gemini Flash integrated for local resume parsing
+
+### Phase 2: Supabase Backend Setup — DONE (2026-03-27)
+- Supabase project created: `oeeatotpwtftmvlydgsg.supabase.co`
+- Database migrations applied:
+  - 5 tables: `profiles`, `experiences`, `applications`, `generated_answers`, `usage_logs`
+  - Full RLS policies on all tables
+  - Auto-create profile trigger on user signup
+  - Auto-update `updated_at` triggers
+- Storage policies for resume uploads (`resumes` bucket)
+- Edge Function `generate-answer` deployed (Gemini Flash, free tier)
+  - JWT auth, 50 req/hr rate limiting, usage logging
+- Secrets configured: `GEMINI_API_KEY`
+
+### Phase 2: Remaining Manual Steps
+- [ ] Create `resumes` storage bucket in Supabase Dashboard
+- [ ] Google OAuth setup (Google Cloud Console + Supabase Auth provider)
+- [ ] End-to-end integration test (signup → profile trigger → edge function call)
+
+### Next: Phase 3 — Connect Extension to Backend
+- Wire extension to use Supabase Auth (Google OAuth sign-in)
+- Replace local Gemini calls with Edge Function proxy
+- Profile CRUD from extension side panel
+
+### Repositories
+- **GitHub**: https://github.com/suryafuturepath/Applicant-CoPilot
 
 ### Foundation Repos (local)
 ```
