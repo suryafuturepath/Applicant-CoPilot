@@ -299,7 +299,7 @@ applicant-copilot/
 ---
 
 ## Current Status
-**Phase 2: Complete** — Supabase backend deployed and operational.
+**Phase 3: Complete** — Extension connected to Supabase backend. All AI calls route through Edge Functions when signed in.
 
 ### Phase 1: Fork & Project Setup — DONE (2026-03-26)
 - Forked JobMatchAI as extension base
@@ -308,26 +308,49 @@ applicant-copilot/
 - Gemini Flash integrated for local resume parsing
 
 ### Phase 2: Supabase Backend Setup — DONE (2026-03-27)
-- Supabase project created: `oeeatotpwtftmvlydgsg.supabase.co`
-- Database migrations applied:
-  - 5 tables: `profiles`, `experiences`, `applications`, `generated_answers`, `usage_logs`
-  - Full RLS policies on all tables
-  - Auto-create profile trigger on user signup
-  - Auto-update `updated_at` triggers
-- Storage policies for resume uploads (`resumes` bucket)
+- Supabase project: `oeeatotpwtftmvlydgsg.supabase.co`
+- 5 tables with full RLS, triggers, storage policies
 - Edge Function `generate-answer` deployed (Gemini Flash, free tier)
-  - JWT auth, 50 req/hr rate limiting, usage logging
-- Secrets configured: `GEMINI_API_KEY`
+- JWT auth, rate limiting, usage logging
 
-### Phase 2: Remaining Manual Steps
+### Phase 3: Connect Extension to Backend — DONE (2026-03-27)
+- **Auth**: Google OAuth via Supabase Auth (tab-based flow)
+  - `supabase-client.js` — singleton client, session persistence in chrome.storage
+  - Sign in/out UI in profile page header
+  - OAuth redirect handler in background service worker
+- **AI Proxy**: All 5 AI handlers route through Edge Function when signed in
+  - `handleAnalyzeJob`, `handleGenerateAutofill`, `handleGenerateCoverLetter`, `handleRewriteBullets`, `handleGenerateResume`
+  - Graceful fallback to local API key when signed out
+- **Profile Sync**: Extension → Supabase (one-way push, fire-and-forget)
+  - Syncs profiles + experiences table on every save
+  - Loads remote profile on first sign-in (if local is empty)
+- **Cover Letter Fix**: Upgraded from 200-250 words to 400-500 words, 4 paragraphs
+- **ATS Resume Generator**: New feature
+  - Generate tailored resume with 90+ ATS score from profile + JD
+  - Custom instructions support ("emphasize leadership", etc.)
+  - Download as PDF via browser print
+  - New migration: `resume_generation` action type in usage_logs
+- **JSON Parse Robustness**: 7-strategy parser that never throws
+  - Truncated JSON repair (closes unclosed brackets/braces)
+  - Fallback object with `_parseError` flag for graceful UI degradation
+  - Gemini `responseMimeType: 'application/json'` for JSON-expecting calls only
+
+### Code Quality Pass — DONE (2026-03-27)
+Applied fixes from 4 parallel code reviews (UX, Performance, Standards, Peer):
+- **Security**: Added `escapeAttr()` for XSS prevention in attribute contexts; restricted CORS to chrome-extension:// and supabase.co origins
+- **Performance**: URL guard skips initialization on non-job sites; replaced `MutationObserver(body, subtree)` with 800ms polling + popstate; debounced notes auto-save (800ms); reused `escapeHTML` DOM element
+- **Standards**: Extracted magic numbers to named constants (`MAX_JD_LENGTH_ANALYSIS`, `MAX_SAVED_JOBS`, etc.); deduplicated Supabase URL (single source in `supabase-client.js`)
+- **Accessibility**: Toast `role="status" aria-live="polite"`
+
+### Remaining Manual Steps
 - [ ] Create `resumes` storage bucket in Supabase Dashboard
 - [ ] Google OAuth setup (Google Cloud Console + Supabase Auth provider)
-- [ ] End-to-end integration test (signup → profile trigger → edge function call)
+- [ ] End-to-end integration test
 
-### Next: Phase 3 — Connect Extension to Backend
-- Wire extension to use Supabase Auth (Google OAuth sign-in)
-- Replace local Gemini calls with Edge Function proxy
-- Profile CRUD from extension side panel
+### Next: Phase 4 — Polish & Ship
+- WXT + TypeScript migration (Week 2-3)
+- Full Workday field handler port
+- Billing/payment system
 
 ### Repositories
 - **GitHub**: https://github.com/suryafuturepath/Applicant-CoPilot

@@ -56,6 +56,7 @@ import {
   buildDropdownMatchPrompt, // Builds the prompt that selects the best option from a dropdown list
   buildCoverLetterPrompt,   // Builds the prompt that writes a tailored cover letter
   buildBulletRewritePrompt, // Builds the prompt that rewrites resume bullets to target a specific JD
+  buildResumeGeneratePrompt, // Builds the prompt that generates an ATS-optimized resume
   buildTestPrompt,          // Builds a minimal "ping" prompt used to validate AI connectivity
   DEFAULT_MODEL,        // Fallback model identifier when the user has not configured one
   DEFAULT_TEMPERATURE,  // Fallback temperature value (typically 0 or 0.7)
@@ -64,6 +65,27 @@ import {
 
 // Rule-based matcher that resolves common dropdown questions without an AI call
 import { deterministicFieldMatcher } from './deterministicMatcher.js';
+
+// ─── Constants ──────────────────────────────────────────────────────────────
+
+const MAX_JD_LENGTH_ANALYSIS = 8000;
+const MAX_JD_LENGTH_GENERATION = 6000;
+const MAX_SAVED_JOBS = 100;
+const MAX_APPLIED_JOBS = 500;
+
+// Supabase client for auth and backend API calls
+import {
+  SUPABASE_URL,
+  restoreSession,
+  getSession,
+  getUser,
+  isSignedIn,
+  signInWithGoogle,
+  handleOAuthCallback,
+  signOut,
+  callEdgeFunction,
+  getAuthenticatedClient,
+} from './supabase-client.js';
 
 
 // ─── Settings helpers ────────────────────────────────────────────────────────
@@ -201,8 +223,9 @@ async function handleParseResume(rawText) {
   const messages = buildResumeParsePrompt(rawText);
   const result = await callAI(settings.provider, settings.apiKey, messages, {
     model: settings.model,
-    temperature: 0.1, // Very low temperature: we want factual extraction, not creativity
-    maxTokens: 4096   // Large ceiling to accommodate verbose resumes
+    temperature: 0.1,
+    maxTokens: 4096,
+    responseFormat: 'json'
   });
   return parseJSONResponse(result);
 }
@@ -223,27 +246,57 @@ async function handleParseResume(rawText) {
  * @returns {Promise<Object>} Analysis object including score, gaps, highlights, etc.
  */
 async function handleAnalyzeJob(jobDescription, jobTitle, company) {
-  const settings = await getSettings();
-  if (!settings.apiKey) throw new Error('No API key configured. Go to Profile → AI Settings.');
-
   const profile = await getProfile();
   if (!profile) throw new Error('No resume profile found. Upload your resume first.');
 
-  // Truncate long job descriptions to avoid exceeding model context windows.
-  // 8 000 chars is a conservative limit that leaves room for the system prompt
-  // and the profile data that are also injected into the same request.
-  const maxLen = 8000;
+  const maxLen = MAX_JD_LENGTH_ANALYSIS;
   const truncatedJD = jobDescription.length > maxLen
     ? jobDescription.substring(0, maxLen) + '\n...[truncated]'
     : jobDescription;
 
+  // ── Backend path ────────────────────────────────────────────────────────
+  const signedIn = await isSignedIn();
+  if (signedIn) {
+    try {
+      const result = await callEdgeFunction('generate-answer', {
+        question: `Analyze this job posting and provide a JSON object with: score (0-100), matchHighlights (array of strings), gapAnalysis (array of strings), missingSkills (array of strings), atsKeywords (array of strings), insights (string), salaryEstimate (string or null). Be thorough but concise.`,
+        jd_text: truncatedJD,
+        jd_company: company,
+        jd_role: jobTitle,
+        user_profile: {
+          full_name: profile.name,
+          headline: profile.summary?.substring(0, 200),
+          summary: profile.summary,
+          experiences: (profile.experience || []).map(exp => ({
+            company: exp.company || '',
+            title: exp.title || '',
+            description: exp.description || '',
+            skills: profile.skills || [],
+          })),
+        },
+      });
+
+      if (result?.answer) {
+        const parsed = parseJSONResponse(result.answer);
+        if (jobDescription.length > maxLen) { parsed.jdTruncated = true; parsed.truncated = true; }
+        return parsed;
+      }
+    } catch (err) {
+      console.warn('[analyzeJob] Backend call failed, falling back to local AI:', err.message);
+    }
+  }
+
+  // ── Local path ──────────────────────────────────────────────────────────
+  const settings = await getSettings();
+  if (!settings.apiKey) throw new Error('No API key configured. Sign in with Google or go to Profile → AI Settings.');
+
   const messages = buildJobAnalysisPrompt(profile, truncatedJD, jobTitle, company);
   const result = await callAI(settings.provider, settings.apiKey, messages, {
     model: settings.model,
-    temperature: 0 // Analysis should be fully deterministic — no creative variation
+    temperature: 0,
+    responseFormat: 'json'
   });
   const parsed = parseJSONResponse(result);
-  // Annotate the result so the UI can inform the user that analysis was partial
   if (jobDescription.length > maxLen) parsed.jdTruncated = true;
   if (jobDescription.length > maxLen) parsed.truncated = true;
   return parsed;
@@ -263,20 +316,56 @@ async function handleAnalyzeJob(jobDescription, jobTitle, company) {
  * @returns {Promise<Object>} Map of field identifiers to suggested fill values.
  */
 async function handleGenerateAutofill(formFields) {
-  const settings = await getSettings();
-  if (!settings.apiKey) throw new Error('No API key configured. Go to Profile → AI Settings.');
-
   const profile = await getProfile();
   if (!profile) throw new Error('No resume profile found. Upload your resume first.');
 
-  // Q&A list provides explicit overrides that improve accuracy for personal /
-  // preference fields that cannot be inferred from the resume alone.
+  // ── Backend path: use Edge Function when signed in ──────────────────────
+  const signedIn = await isSignedIn();
+  if (signedIn) {
+    try {
+      const qaList = await getQAList();
+      // Send each field as a question to the edge function, batched in one call
+      const fieldQuestions = formFields.map(f =>
+        `Form field "${f.label || f.name}" (type: ${f.type}${f.options ? ', options: ' + f.options.join(', ') : ''})`
+      ).join('\n');
+
+      const result = await callEdgeFunction('generate-answer', {
+        question: `Fill out these job application form fields based on my profile and Q&A answers:\n\n${fieldQuestions}\n\nRespond with a JSON object mapping each field label to its suggested value.`,
+        user_profile: {
+          full_name: profile.name,
+          headline: profile.summary?.substring(0, 200),
+          summary: profile.summary,
+          target_roles: [],
+          experiences: (profile.experience || []).map(exp => ({
+            company: exp.company || '',
+            title: exp.title || '',
+            description: exp.description || '',
+            impact: '',
+            skills: [],
+          })),
+        },
+      });
+
+      if (result?.answer) {
+        return parseJSONResponse(result.answer);
+      }
+    } catch (err) {
+      console.warn('[autofill] Backend call failed, falling back to local AI:', err.message);
+      // Fall through to local AI path
+    }
+  }
+
+  // ── Local path: use direct AI call (requires user's API key) ────────────
+  const settings = await getSettings();
+  if (!settings.apiKey) throw new Error('No API key configured. Sign in with Google or go to Profile → AI Settings.');
+
   const qaList = await getQAList();
   const messages = buildAutofillPrompt(profile, qaList, formFields);
   const result = await callAI(settings.provider, settings.apiKey, messages, {
     model: settings.model,
-    temperature: 0,     // Deterministic — we want consistent field mappings
-    maxTokens: 4096     // Forms can have many fields; allow a large response
+    temperature: 0,
+    maxTokens: 4096,
+    responseFormat: 'json'
   });
   return parseJSONResponse(result);
 }
@@ -380,7 +469,7 @@ async function handleSaveJob(jobData) {
   // Prepend so the UI shows the most recently saved job at the top
   jobs.unshift(job);
   // Keep max 100 jobs — truncate the array in place to avoid unnecessary copies
-  if (jobs.length > 100) jobs.length = 100;
+  if (jobs.length > MAX_SAVED_JOBS) jobs.length = MAX_SAVED_JOBS;
   // Persist the updated array back to storage
   await chrome.storage.local.set({ savedJobs: jobs });
   return job;
@@ -455,7 +544,7 @@ async function handleMarkApplied(jobData) {
   jobs.unshift(job);
   // Cap at 500 entries — applied list is larger than saved list since users
   // typically apply to many more jobs than they bookmark.
-  if (jobs.length > 500) jobs.length = 500;
+  if (jobs.length > MAX_APPLIED_JOBS) jobs.length = MAX_APPLIED_JOBS;
   await chrome.storage.local.set({ appliedJobs: jobs });
   return job;
 }
@@ -480,24 +569,60 @@ async function handleMarkApplied(jobData) {
  * @returns {Promise<string>} The generated cover letter as a plain text string.
  */
 async function handleGenerateCoverLetter(jobDescription, analysis) {
-  const settings = await getSettings();
-  if (!settings.apiKey) throw new Error('No API key configured. Go to Settings.');
   const profile = await getProfile();
   if (!profile) throw new Error('No resume profile found. Upload your resume first.');
 
-  // Cover letter prompts are verbose; use a smaller truncation limit than
-  // job analysis to leave more budget for instructions and the profile blob.
-  const maxLen = 6000;
+  const maxLen = MAX_JD_LENGTH_GENERATION;
   const truncatedJD = jobDescription.length > maxLen
     ? jobDescription.substring(0, maxLen) + '\n...[truncated]'
     : jobDescription;
 
+  // ── Backend path ────────────────────────────────────────────────────────
+  const signedIn = await isSignedIn();
+  if (signedIn) {
+    try {
+      const edgeResult = await callEdgeFunction('generate-answer', {
+        question: `Write a professional cover letter for this job application. 4 paragraphs, 400-500 words total:
+Paragraph 1 — Hook: Why this specific company and role excites me. Mention the company by name.
+Paragraph 2 — Skills Match: Reference 2-3 specific achievements from my profile WITH numbers/metrics. Connect each to a job requirement.
+Paragraph 3 — Culture & Value Fit: Why I specifically am the right person — my unique background and perspective.
+Paragraph 4 — Closing: Confident call to action with availability.
+No address headers, no "Dear Hiring Manager", no signature, no placeholders. Start directly with paragraph one. No clichés. Use real details from my profile.`,
+        jd_text: truncatedJD,
+        jd_company: analysis?.company || '',
+        jd_role: analysis?.title || '',
+        user_profile: {
+          full_name: profile.name,
+          headline: profile.summary?.substring(0, 200),
+          summary: profile.summary,
+          experiences: (profile.experience || []).map(exp => ({
+            company: exp.company || '',
+            title: exp.title || '',
+            description: exp.description || '',
+            skills: profile.skills || [],
+          })),
+        },
+      });
+
+      if (edgeResult?.answer) {
+        const result = { text: edgeResult.answer };
+        if (jobDescription.length > maxLen) result.truncated = true;
+        return result;
+      }
+    } catch (err) {
+      console.warn('[coverLetter] Backend call failed, falling back to local AI:', err.message);
+    }
+  }
+
+  // ── Local path ──────────────────────────────────────────────────────────
+  const settings = await getSettings();
+  if (!settings.apiKey) throw new Error('No API key configured. Sign in with Google or go to Settings.');
+
   const messages = buildCoverLetterPrompt(profile, truncatedJD, analysis);
-  // Return the raw AI string — cover letters are prose, not JSON
   const text = await callAI(settings.provider, settings.apiKey, messages, {
     model: settings.model,
-    temperature: 0.4, // Moderate creativity: varied sentences without hallucinated facts
-    maxTokens: 700    // ~500 words — a standard single-page cover letter length
+    temperature: 0.4,
+    maxTokens: 2048
   });
   const result = { text };
   if (jobDescription.length > maxLen) result.truncated = true;
@@ -526,29 +651,55 @@ async function handleGenerateCoverLetter(jobDescription, analysis) {
  *   keyed by experience entry.
  */
 async function handleRewriteBullets(jobDescription, missingSkills) {
-  const settings = await getSettings();
-  if (!settings.apiKey) throw new Error('No API key configured. Go to Settings.');
   const profile = await getProfile();
   if (!profile) throw new Error('No resume profile found. Upload your resume first.');
 
-  // Guard: ensure the profile has at least one experience entry with a real
-  // description.  A description shorter than 10 chars is treated as effectively
-  // empty (e.g. placeholder or whitespace).
   const hasExperience = Array.isArray(profile.experience) &&
     profile.experience.some(e => e.description && e.description.trim().length > 10);
   if (!hasExperience) {
     throw new Error('No experience bullets found in your resume profile. Make sure your resume was parsed correctly with job descriptions.');
   }
 
+  // ── Backend path ────────────────────────────────────────────────────────
+  const signedIn = await isSignedIn();
+  if (signedIn) {
+    try {
+      const edgeResult = await callEdgeFunction('generate-answer', {
+        question: `Rewrite my resume experience bullets to better target this job. Focus on these missing skills: ${(missingSkills || []).join(', ')}. Return a JSON object where keys are experience entry titles and values are arrays of rewritten bullet strings.`,
+        jd_text: jobDescription,
+        user_profile: {
+          full_name: profile.name,
+          summary: profile.summary,
+          experiences: (profile.experience || []).map(exp => ({
+            company: exp.company || '',
+            title: exp.title || '',
+            description: exp.description || '',
+            skills: profile.skills || [],
+          })),
+        },
+      });
+      if (edgeResult?.answer) {
+        try { return parseJSONResponse(edgeResult.answer); }
+        catch (_) { throw new Error('AI response was truncated or invalid. Try again.'); }
+      }
+    } catch (err) {
+      if (err.message.includes('truncated')) throw err;
+      console.warn('[rewriteBullets] Backend call failed, falling back to local AI:', err.message);
+    }
+  }
+
+  // ── Local path ──────────────────────────────────────────────────────────
+  const settings = await getSettings();
+  if (!settings.apiKey) throw new Error('No API key configured. Sign in with Google or go to Settings.');
+
   const messages = buildBulletRewritePrompt(profile, jobDescription, missingSkills);
   const result = await callAI(settings.provider, settings.apiKey, messages, {
     model: settings.model,
-    temperature: 0.2, // Slight creativity to improve phrasing, but stay factually grounded
-    maxTokens: 4096   // Rewrites can be lengthy for candidates with many roles
+    temperature: 0.2,
+    maxTokens: 4096,
+    responseFormat: 'json'
   });
 
-  // Wrap parseJSONResponse in a try/catch to convert cryptic parse failures into
-  // an actionable error message (model output token limits are the most common cause).
   try {
     return parseJSONResponse(result);
   } catch (_) {
@@ -568,6 +719,75 @@ async function handleDeleteAppliedJob(jobId) {
   const filtered = jobs.filter(j => j.id !== jobId);
   await chrome.storage.local.set({ appliedJobs: filtered });
   return { success: true };
+}
+
+/**
+ * Generates a tailored, ATS-optimized resume based on the user's profile and a target JD.
+ *
+ * @async
+ * @param {string} jobDescription      - Raw text of the job posting.
+ * @param {string} jobTitle            - Job title.
+ * @param {string} company             - Company name.
+ * @param {string} [customInstructions] - Optional user instructions.
+ * @returns {Promise<{text: string}>}  The generated resume as markdown text.
+ */
+async function handleGenerateResume(jobDescription, jobTitle, company, customInstructions) {
+  const profile = await getProfile();
+  if (!profile) throw new Error('No resume profile found. Upload your resume first.');
+
+  const maxLen = MAX_JD_LENGTH_GENERATION;
+  const truncatedJD = jobDescription.length > maxLen
+    ? jobDescription.substring(0, maxLen) + '\n...[truncated]'
+    : jobDescription;
+
+  // ── Backend path ────────────────────────────────────────────────────────
+  const signedIn = await isSignedIn();
+  if (signedIn) {
+    try {
+      const edgeResult = await callEdgeFunction('generate-answer', {
+        question: `Generate an ATS-optimized resume tailored for this job. Target 90+ ATS score.
+Use standard section headings: SUMMARY, EXPERIENCE, SKILLS, EDUCATION, CERTIFICATIONS.
+Single column, no tables/graphics. Mirror JD keywords naturally. Quantify achievements.
+Do NOT fabricate experience or skills. DO reframe existing experience to match JD language.
+Return ONLY the resume in clean markdown. No commentary.${customInstructions ? '\n\nAdditional instructions: ' + customInstructions : ''}`,
+        jd_text: truncatedJD,
+        jd_company: company,
+        jd_role: jobTitle,
+        user_profile: {
+          full_name: profile.name,
+          headline: profile.summary?.substring(0, 200),
+          summary: profile.summary,
+          target_roles: [],
+          experiences: (profile.experience || []).map(exp => ({
+            company: exp.company || '',
+            title: exp.title || '',
+            description: exp.description || '',
+            impact: '',
+            skills: profile.skills || [],
+          })),
+        },
+        max_tokens: 4096,
+      });
+
+      if (edgeResult?.answer) {
+        return { text: edgeResult.answer };
+      }
+    } catch (err) {
+      console.warn('[generateResume] Backend call failed, falling back to local AI:', err.message);
+    }
+  }
+
+  // ── Local path ──────────────────────────────────────────────────────────
+  const settings = await getSettings();
+  if (!settings.apiKey) throw new Error('No API key configured. Sign in with Google or go to Settings.');
+
+  const messages = buildResumeGeneratePrompt(profile, truncatedJD, jobTitle, company, customInstructions);
+  const text = await callAI(settings.provider, settings.apiKey, messages, {
+    model: settings.model,
+    temperature: 0.2,
+    maxTokens: 4096
+  });
+  return { text };
 }
 
 
@@ -623,6 +843,113 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
  * @throws {Error} For unknown message types or when handler prerequisites fail.
  * @returns {Promise<*>} The result value produced by the matched handler.
  */
+// ─── Profile sync to Supabase ────────────────────────────────────────────────
+
+/**
+ * Push the local profile to Supabase (profiles + experiences tables).
+ * Only runs if the user is signed in. Fire-and-forget — errors are logged, not thrown.
+ */
+async function syncProfileToSupabase(profileData) {
+  const client = await getAuthenticatedClient();
+  if (!client || !profileData) return;
+
+  const user = await getUser();
+  if (!user) return;
+
+  // Upsert profile row
+  const { error: profileError } = await client
+    .from('profiles')
+    .upsert({
+      id: user.id,
+      full_name: profileData.name || '',
+      email: profileData.email || user.email || '',
+      headline: profileData.summary?.substring(0, 200) || '',
+      summary: profileData.summary || '',
+      target_roles: [],
+      resume_parsed: {
+        skills: profileData.skills || [],
+        certifications: profileData.certifications || [],
+        education: profileData.education || [],
+        projects: profileData.projects || [],
+        phone: profileData.phone || '',
+        location: profileData.location || '',
+        linkedin: profileData.linkedin || '',
+        website: profileData.website || '',
+      },
+    }, { onConflict: 'id' });
+
+  if (profileError) {
+    console.error('[profile sync] Profile upsert failed:', profileError);
+    return;
+  }
+
+  // Sync experiences: delete existing, insert fresh
+  if (Array.isArray(profileData.experience) && profileData.experience.length > 0) {
+    await client.from('experiences').delete().eq('profile_id', user.id);
+    const experienceRows = profileData.experience.map((exp, i) => ({
+      profile_id: user.id,
+      company: exp.company || 'Unknown',
+      title: exp.title || 'Unknown',
+      start_date: exp.startDate || null,
+      end_date: exp.endDate || null,
+      description: exp.description || '',
+      skills: exp.skills || [],
+      order_index: i,
+    }));
+    const { error: expError } = await client.from('experiences').insert(experienceRows);
+    if (expError) console.error('[profile sync] Experiences insert failed:', expError);
+  }
+}
+
+/**
+ * Load profile from Supabase and merge into local storage.
+ * Called on sign-in when local profile is empty.
+ */
+async function loadProfileFromSupabase() {
+  const client = await getAuthenticatedClient();
+  if (!client) return null;
+
+  const user = await getUser();
+  if (!user) return null;
+
+  const { data: profile, error } = await client
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single();
+
+  if (error || !profile) return null;
+
+  const { data: experiences } = await client
+    .from('experiences')
+    .select('*')
+    .eq('profile_id', user.id)
+    .order('order_index');
+
+  // Transform Supabase format to extension format
+  return {
+    name: profile.full_name || '',
+    email: profile.email || '',
+    phone: profile.resume_parsed?.phone || '',
+    location: profile.resume_parsed?.location || '',
+    linkedin: profile.resume_parsed?.linkedin || '',
+    website: profile.resume_parsed?.website || '',
+    summary: profile.summary || '',
+    skills: profile.resume_parsed?.skills || [],
+    certifications: profile.resume_parsed?.certifications || [],
+    education: profile.resume_parsed?.education || [],
+    projects: profile.resume_parsed?.projects || [],
+    experience: (experiences || []).map(exp => ({
+      company: exp.company,
+      title: exp.title,
+      startDate: exp.start_date,
+      endDate: exp.end_date,
+      description: exp.description,
+      skills: exp.skills || [],
+    })),
+  };
+}
+
 // ── Handler registry ──────────────────────────────────────────────────────
 // Maps message type strings to handler functions. Replaces the former switch
 // statement for cleaner routing and easier extensibility.
@@ -646,6 +973,10 @@ const handlers = {
 
   'SAVE_PROFILE': async (msg) => {
     await chrome.storage.local.set({ profile: msg.profile });
+    // Fire-and-forget sync to Supabase (don't block the save)
+    syncProfileToSupabase(msg.profile).catch(err =>
+      console.warn('[profile sync] Failed:', err.message)
+    );
     return { success: true };
   },
 
@@ -681,6 +1012,8 @@ const handlers = {
 
   'REWRITE_BULLETS': (msg) => handleRewriteBullets(msg.jobDescription, msg.missingSkills),
 
+  'GENERATE_RESUME': (msg) => handleGenerateResume(msg.jobDescription, msg.jobTitle, msg.company, msg.customInstructions),
+
   'MARK_APPLIED': (msg) => handleMarkApplied(msg.jobData),
 
   'GET_APPLIED_JOBS': (msg) => getAppliedJobs(),
@@ -705,6 +1038,26 @@ const handlers = {
   'TRIGGER_ANALYZE': (msg) => forwardToActiveTab(msg),
 
   'TRIGGER_AUTOFILL': (msg) => forwardToActiveTab(msg),
+
+  // ── Auth operations ───────────────────────────────────────────────────
+  // Supabase Auth integration for Google OAuth sign-in/out.
+
+  'SIGN_IN': async (msg) => {
+    const url = await signInWithGoogle();
+    // Open the OAuth URL in a new tab
+    await chrome.tabs.create({ url });
+    return { success: true };
+  },
+
+  'SIGN_OUT': async (msg) => {
+    await signOut();
+    return { success: true };
+  },
+
+  'GET_AUTH_STATE': async (msg) => {
+    const user = await getUser();
+    return user ? { signedIn: true, user: { id: user.id, email: user.email, name: user.user_metadata?.full_name || user.user_metadata?.name || '' } } : { signedIn: false, user: null };
+  },
 };
 
 async function handleMessage(message, sender) {
@@ -752,6 +1105,35 @@ chrome.action.onClicked.addListener(async (tab) => {
     } catch (e) {
       // Content script not loaded on this page (e.g. chrome:// pages)
     }
+  }
+});
+
+
+// ─── OAuth redirect handler ──────────────────────────────────────────────────
+//
+// After Google OAuth, Supabase redirects to our callback URL with tokens.
+// We listen for tab URL changes and intercept the callback to extract the session.
+
+const SUPABASE_CALLBACK_URL = `${SUPABASE_URL}/auth/v1/callback`;
+
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (!changeInfo.url || !changeInfo.url.startsWith(SUPABASE_CALLBACK_URL)) return;
+
+  try {
+    const session = await handleOAuthCallback(changeInfo.url);
+    if (session) {
+      // Close the OAuth tab
+      chrome.tabs.remove(tabId).catch(() => {});
+
+      // Find any open profile tabs and notify them of the auth state change
+      const profileUrl = chrome.runtime.getURL('profile.html');
+      const profileTabs = await chrome.tabs.query({ url: profileUrl + '*' });
+      for (const pt of profileTabs) {
+        chrome.tabs.sendMessage(pt.id, { type: 'AUTH_STATE_CHANGED', signedIn: true }).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.error('[background] OAuth callback error:', err);
   }
 });
 

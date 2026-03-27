@@ -42,4 +42,4 @@ Chrome extension copilot for job applicants. Forked from JobMatchAI (MIT), enhan
 - **GitHub**: https://github.com/suryafuturepath/Applicant-CoPilot (github)
 
 ## Current Phase
-Phase 2 complete (Supabase backend deployed). Next: Phase 3 — Connect Extension to Backend. See PROJECT-CONTEXT.md for full status.
+Phase 3 complete (extension connected to backend, all AI calls proxy through Edge Functions, ATS resume generator, code quality pass). Next: Phase 4 — Polish & Ship. See PROJECT-CONTEXT.md for full status.

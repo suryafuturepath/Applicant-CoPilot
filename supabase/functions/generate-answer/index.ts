@@ -61,12 +61,24 @@ const MAX_REQUESTS_PER_HOUR = 50;
 
 // --- CORS headers ---
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+// Chrome extensions don't send Origin headers from service workers.
+// We restrict to chrome-extension:// and our Supabase domain.
+const ALLOWED_ORIGIN_PATTERN = /^(chrome-extension:\/\/|https:\/\/.*\.supabase\.co)/;
+
+const corsHeaders: Record<string, string> = {
+  "Access-Control-Allow-Origin": "https://oeeatotpwtftmvlydgsg.supabase.co",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+function getCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("Origin") || "";
+  if (ALLOWED_ORIGIN_PATTERN.test(origin)) {
+    return { ...corsHeaders, "Access-Control-Allow-Origin": origin };
+  }
+  return corsHeaders;
+}
 
 // --- Helper: Build system prompt ---
 
@@ -151,7 +163,7 @@ const serviceClient = supabaseUrl && supabaseServiceKey
 Deno.serve(async (req: Request) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
+    return new Response(null, { status: 204, headers: getCorsHeaders(req) });
   }
 
   if (req.method !== "POST") {

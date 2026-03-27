@@ -40,6 +40,27 @@
   if (window.__applicantCopilotLoaded) return;
   window.__applicantCopilotLoaded = true;
 
+  // ─── URL guard: only initialize on supported job sites ─────────────
+  // Keeps the extension dormant on non-job pages (Gmail, YouTube, etc.)
+  // to avoid unnecessary DOM injection and performance overhead.
+  // The toolbar icon click (TOGGLE_PANEL message) still works on any page
+  // because it's handled by a separate message listener below.
+  const JOB_SITE_PATTERNS = [
+    /linkedin\.com/i, /indeed\.com/i, /glassdoor\.com/i,
+    /greenhouse\.io/i, /lever\.co/i, /myworkdayjobs\.com/i,
+    /myworkday\.com/i, /icims\.com/i, /workday\.com/i,
+    /smartrecruiters\.com/i, /ashbyhq\.com/i, /jobs\./i, /careers\./i, /apply\./i,
+  ];
+  const _isJobSite = JOB_SITE_PATTERNS.some(p => p.test(window.location.hostname));
+  let _lazyInitDone = false;
+
+  function ensureInitialized() {
+    if (_lazyInitDone) return;
+    _lazyInitDone = true;
+    createPanel();
+    createToggleButton();
+  }
+
   // ─── State ──────────────────────────────────────────────────────
   // Module-level variables shared across functions within this IIFE.
 
@@ -956,6 +977,7 @@
           <button class="jm-btn jm-btn-applied" id="jmMarkApplied" style="display:none">Mark as Applied</button>
           <button class="jm-btn jm-btn-outline" id="jmCoverLetterBtn" style="display:none">&#9993; Cover Letter</button>
           <button class="jm-btn jm-btn-outline" id="jmRewriteBulletsBtn" style="display:none">&#9997; Improve Resume Bullets</button>
+          <button class="jm-btn jm-btn-outline" id="jmGenerateResumeBtn" style="display:none">&#128196; ATS Resume</button>
         </div>
 
         <div class="jm-score-section" id="jmScoreSection">
@@ -1021,6 +1043,27 @@
           <div id="jmBulletList"></div>
         </div>
 
+        <!-- ATS Resume generator -->
+        <div class="jm-section" id="jmResumeSection" style="display:none">
+          <div class="jm-section-head">
+            <h3>ATS-Optimized Resume</h3>
+            <span style="font-size:11px;background:#059669;color:#fff;padding:2px 8px;border-radius:10px;">90+ ATS</span>
+          </div>
+          <div style="margin-bottom:10px;">
+            <textarea class="jm-notes-textarea" id="jmResumeInstructions" placeholder="Optional instructions: e.g. 'Emphasize leadership experience', 'Remove internship from 2019', 'Highlight Python skills'..." style="min-height:50px;font-size:12px;"></textarea>
+          </div>
+          <div style="margin-bottom:10px;">
+            <button class="jm-btn jm-btn-primary" id="jmDoGenerateResume" style="width:100%;">Generate Tailored Resume</button>
+          </div>
+          <div id="jmResumeOutput" style="display:none;">
+            <div class="jm-cover-letter" id="jmResumeText" style="white-space:pre-wrap;font-size:12px;line-height:1.6;max-height:400px;overflow-y:auto;"></div>
+            <div style="display:flex;gap:8px;margin-top:10px;">
+              <button class="jm-btn jm-btn-primary" id="jmDownloadResumePDF" style="flex:1;">&#128196; Download PDF</button>
+              <button class="jm-btn jm-btn-secondary" id="jmCopyResume">Copy</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Job notes (always visible) -->
         <div class="jm-notes-section">
           <h3>Notes</h3>
@@ -1049,6 +1092,21 @@
     panel.querySelector('#jmMarkApplied').addEventListener('click', markApplied);
     panel.querySelector('#jmCoverLetterBtn').addEventListener('click', generateCoverLetter);
     panel.querySelector('#jmRewriteBulletsBtn').addEventListener('click', rewriteBullets);
+    panel.querySelector('#jmGenerateResumeBtn').addEventListener('click', () => {
+      const section = shadowRoot.getElementById('jmResumeSection');
+      section.style.display = section.style.display === 'none' ? 'block' : 'none';
+    });
+    panel.querySelector('#jmDoGenerateResume').addEventListener('click', generateATSResume);
+    panel.querySelector('#jmDownloadResumePDF').addEventListener('click', downloadResumeAsPDF);
+    panel.querySelector('#jmCopyResume').addEventListener('click', () => {
+      const text = shadowRoot.getElementById('jmResumeText').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = shadowRoot.getElementById('jmCopyResume');
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = orig; }, 1500);
+      }).catch(() => {});
+    });
     panel.querySelector('#jmApplyFill').addEventListener('click', applyAutofill);
     panel.querySelector('#jmCancelFill').addEventListener('click', cancelAutofill);
     panel.querySelector('#jmCopyCoverLetter').addEventListener('click', () => {
@@ -1061,7 +1119,11 @@
       }).catch(() => {});
     });
     panel.querySelector('#jmNotesInput').addEventListener('blur', saveJobNotes);
-    panel.querySelector('#jmNotesInput').addEventListener('input', saveJobNotes);
+    let _notesDebounce = null;
+    panel.querySelector('#jmNotesInput').addEventListener('input', () => {
+      clearTimeout(_notesDebounce);
+      _notesDebounce = setTimeout(saveJobNotes, 800);
+    });
 
     // Theme toggle button
     panel.querySelector('#jmThemeToggle').addEventListener('click', cycleTheme);
@@ -1760,6 +1822,7 @@
       shadowRoot.getElementById('jmSaveJob').style.display = 'flex';
       shadowRoot.getElementById('jmCoverLetterBtn').style.display = 'flex';
       shadowRoot.getElementById('jmRewriteBulletsBtn').style.display = 'flex';
+      shadowRoot.getElementById('jmGenerateResumeBtn').style.display = 'flex';
       btn.textContent = 'Re-Analyze';
       setStatus('Showing cached results.', 'success');
       setTimeout(clearStatus, 2000);
@@ -1820,9 +1883,11 @@
       }
       shadowRoot.getElementById('jmCoverLetterBtn').style.display = 'flex';
       shadowRoot.getElementById('jmRewriteBulletsBtn').style.display = 'flex';
+      shadowRoot.getElementById('jmGenerateResumeBtn').style.display = 'flex';
       // Reset any previous AI output sections
       shadowRoot.getElementById('jmCoverLetterSection').style.display = 'none';
       shadowRoot.getElementById('jmBulletSection').style.display = 'none';
+      shadowRoot.getElementById('jmResumeSection').style.display = 'none';
     } catch (err) {
       setStatus('Error: ' + err.message, 'error');
     } finally {
@@ -1861,6 +1926,11 @@
    * @param {Object} data - The analysis object returned by background.js handleAnalyzeJob.
    */
   function renderAnalysis(data) {
+    // If JSON parsing failed, show a retry hint
+    if (data._parseError) {
+      setStatus('AI response format was unexpected. Try Re-Analyze for better results.', 'error');
+    }
+
     // Score
     const scoreSection = shadowRoot.getElementById('jmScoreSection');
     const scoreCircle = shadowRoot.getElementById('jmScoreCircle');
@@ -3511,6 +3581,115 @@
     }
   }
 
+  // ─── ATS Resume Generator ────────────────────────────────────
+
+  /**
+   * Generates a tailored, ATS-optimized resume using the user's profile and the current JD.
+   * Sends GENERATE_RESUME message to background, displays result in the resume section.
+   * @async
+   */
+  async function generateATSResume() {
+    const btn = shadowRoot.getElementById('jmDoGenerateResume');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="jm-spinner"></span> Generating resume...';
+    const output = shadowRoot.getElementById('jmResumeOutput');
+    output.style.display = 'none';
+
+    try {
+      if (!currentAnalysis) throw new Error('Analyze the job first.');
+      const jd = extractJobDescription();
+      const instructions = shadowRoot.getElementById('jmResumeInstructions').value.trim();
+
+      const result = await sendMessage({
+        type: 'GENERATE_RESUME',
+        jobDescription: jd,
+        jobTitle: currentAnalysis.title || currentJobTitle || '',
+        company: currentAnalysis.company || currentCompany || '',
+        customInstructions: instructions || undefined,
+      });
+
+      const text = typeof result === 'string' ? result : result.text;
+      shadowRoot.getElementById('jmResumeText').textContent = text;
+      output.style.display = 'block';
+      scrollPanelTo(output);
+    } catch (err) {
+      shadowRoot.getElementById('jmResumeText').textContent = 'Error: ' + err.message;
+      output.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'Generate Tailored Resume';
+    }
+  }
+
+  /**
+   * Opens a new window with the generated resume formatted as clean HTML,
+   * then triggers the browser's print dialog for save-as-PDF.
+   */
+  function downloadResumeAsPDF() {
+    const resumeMarkdown = shadowRoot.getElementById('jmResumeText').textContent;
+    if (!resumeMarkdown || resumeMarkdown.startsWith('Error:')) return;
+
+    // Convert markdown to simple HTML
+    const html = markdownToResumeHTML(resumeMarkdown);
+
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(html);
+    printWindow.document.close();
+    // Small delay to ensure styles are applied before print dialog
+    setTimeout(() => { printWindow.print(); }, 500);
+  }
+
+  /**
+   * Converts resume markdown to clean, printable HTML with ATS-friendly styling.
+   * @param {string} md - Resume text in markdown format.
+   * @returns {string} Complete HTML document string.
+   */
+  function markdownToResumeHTML(md) {
+    // Process markdown line by line
+    let html = md
+      // H1: Name
+      .replace(/^# (.+)$/gm, '<h1 style="font-size:22px;margin:0 0 4px 0;color:#1a1a1a;">$1</h1>')
+      // H2: Section headings
+      .replace(/^## (.+)$/gm, '<h2 style="font-size:14px;text-transform:uppercase;letter-spacing:1px;border-bottom:1.5px solid #333;padding-bottom:3px;margin:18px 0 8px 0;color:#1a1a1a;">$1</h2>')
+      // H3: Role/Company
+      .replace(/^### (.+)$/gm, '<h3 style="font-size:13px;margin:10px 0 2px 0;color:#1a1a1a;">$1</h3>')
+      // Italic dates
+      .replace(/^\*(.+)\*$/gm, '<div style="font-size:11px;color:#666;margin-bottom:4px;">$1</div>')
+      // Bullet points
+      .replace(/^[•\-\*] (.+)$/gm, '<div style="padding-left:16px;text-indent:-10px;margin:2px 0;font-size:12px;">• $1</div>')
+      // Bold
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      // Remaining lines (contact info, plain text)
+      .replace(/^(?!<)(.+)$/gm, '<p style="margin:2px 0;font-size:12px;color:#333;">$1</p>');
+
+    // Remove excessive empty paragraphs
+    html = html.replace(/<p style="[^"]*"><\/p>/g, '');
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Resume</title>
+  <style>
+    @page { margin: 0.6in 0.7in; size: letter; }
+    body {
+      font-family: 'Georgia', 'Times New Roman', serif;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #1a1a1a;
+      max-width: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    @media print {
+      body { -webkit-print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>${html}</body>
+</html>`;
+  }
+
   // ─── Job notes ────────────────────────────────────────────────
   // Per-URL free-text notes stored in chrome.storage.local under 'ac_jobNotes'.
   // Notes are loaded when the panel opens and auto-saved on input/blur.
@@ -3621,34 +3800,49 @@
    * @param {string} str - The raw string to escape.
    * @returns {string} HTML-safe string.
    */
+  const _escDiv = document.createElement('div');
   function escapeHTML(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
+    _escDiv.textContent = str;
+    return _escDiv.innerHTML;
+  }
+
+  function escapeAttr(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
   // ─── Initialize ───────────────────────────────────────────────
-  // Build the panel and toggle button immediately on script inject.
-  // The panel starts hidden (no .open class); it is shown on first togglePanel() call.
+  // On job sites: create panel + toggle immediately.
+  // On other sites: only initialize when the user clicks the toolbar icon.
 
-  createPanel();
-  createToggleButton();
+  if (_isJobSite) {
+    ensureInitialized();
+  }
+
+  // Listen for toolbar icon click on non-job pages
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'TOGGLE_PANEL') {
+      ensureInitialized();
+      togglePanel();
+      sendResponse({ success: true });
+    }
+    return false;
+  });
 
   // ─── SPA URL change detection (LinkedIn, Indeed, etc.) ────────
-  // LinkedIn and Indeed navigate between job listings without a full page reload.
-  // A MutationObserver on document.body catches the DOM mutations that accompany
-  // these history.pushState navigations, allowing us to reset the panel state
-  // and inform the user that a new job has been detected.
+  // Uses lightweight polling instead of MutationObserver on body.
+  // MutationObserver with subtree:true fires on every DOM change (hundreds/sec
+  // on SPAs like LinkedIn), causing unnecessary battery drain.
 
-  let _lastUrl = window.location.href; // Track the last seen URL to detect changes
-  new MutationObserver(() => {
+  let _lastUrl = window.location.href;
+
+  function handleUrlChange() {
     const currentUrl = window.location.href;
     if (currentUrl === _lastUrl) return;
     _lastUrl = currentUrl;
     currentAnalysis = null;
     _pendingAnswers = null;
-    clearAllChips();        // Remove any floating chips from the previous job page
-    clearAutofillBadges();  // Remove autofill badges from the previous job page
+    clearAllChips();
+    clearAutofillBadges();
     if (shadowRoot && panelOpen) {
       const analyzeBtn = shadowRoot.getElementById('jmAnalyze');
       if (analyzeBtn && analyzeBtn.textContent === 'Re-Analyze') analyzeBtn.textContent = 'Analyze Job';
@@ -3657,8 +3851,9 @@
       [
         'jmScoreSection', 'jmMatchingSection', 'jmMissingSection', 'jmRecsSection',
         'jmInsightsSection', 'jmKeywordsSection', 'jmTruncNotice', 'jmResumeTruncNotice',
-        'jmAutofillPreview', 'jmCoverLetterSection', 'jmBulletSection',
-        'jmJobInfo', 'jmSaveJob', 'jmMarkApplied', 'jmCoverLetterBtn', 'jmRewriteBulletsBtn'
+        'jmAutofillPreview', 'jmCoverLetterSection', 'jmBulletSection', 'jmResumeSection',
+        'jmJobInfo', 'jmSaveJob', 'jmMarkApplied', 'jmCoverLetterBtn', 'jmRewriteBulletsBtn',
+        'jmGenerateResumeBtn'
       ].forEach(id => {
         const el = shadowRoot.getElementById(id);
         if (el) el.style.display = 'none';
@@ -3668,7 +3863,10 @@
       setStatus('New job detected — click Analyze Job.', 'info');
       setTimeout(clearStatus, 3000);
     }
-  }).observe(document.body, { childList: true, subtree: true });
-  checkIfApplied();
+  }
+
+  // Detect SPA navigations via popstate + polling (800ms interval)
+  window.addEventListener('popstate', handleUrlChange);
+  if (_isJobSite) setInterval(handleUrlChange, 800);
 
 })();
