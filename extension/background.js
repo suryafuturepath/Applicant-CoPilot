@@ -1115,12 +1115,19 @@ chrome.action.onClicked.addListener(async (tab) => {
 // We listen for tab URL changes and intercept the callback to extract the session.
 
 const SUPABASE_CALLBACK_URL = `${SUPABASE_URL}/auth/v1/callback`;
+const EXTENSION_ORIGIN = chrome.runtime.getURL('');
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (!changeInfo.url || !changeInfo.url.startsWith(SUPABASE_CALLBACK_URL)) return;
+  const url = changeInfo.url || '';
+
+  // Match either the Supabase callback URL or the extension redirect with tokens
+  const isSupabaseCallback = url.startsWith(SUPABASE_CALLBACK_URL);
+  const isExtensionRedirect = url.startsWith(EXTENSION_ORIGIN) && (url.includes('access_token=') || url.includes('code='));
+
+  if (!isSupabaseCallback && !isExtensionRedirect) return;
 
   try {
-    const session = await handleOAuthCallback(changeInfo.url);
+    const session = await handleOAuthCallback(url);
     if (session) {
       // Close the OAuth tab
       chrome.tabs.remove(tabId).catch(() => {});
@@ -1130,6 +1137,11 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       const profileTabs = await chrome.tabs.query({ url: profileUrl + '*' });
       for (const pt of profileTabs) {
         chrome.tabs.sendMessage(pt.id, { type: 'AUTH_STATE_CHANGED', signedIn: true }).catch(() => {});
+      }
+
+      // If no profile tab is open, open one to show signed-in state
+      if (profileTabs.length === 0) {
+        chrome.tabs.create({ url: profileUrl });
       }
     }
   } catch (err) {
