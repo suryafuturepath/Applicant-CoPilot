@@ -134,19 +134,134 @@ async function getProfile() {
 }
 
 /**
- * Retrieves the user's custom Q&A list from local storage.
- *
- * The Q&A list is an array of { question, answer } pairs that the user has
- * manually added to improve autofill accuracy for fields the AI would otherwise
- * have to guess from the resume alone.
- *
+ * Retrieves the applicant context from local storage.
+ * @async
+ * @returns {Promise<Object>} The stored applicantContext object.
+ */
+async function getApplicantContext() {
+  const result = await chrome.storage.local.get('applicantContext');
+  return result.applicantContext || { sections: {}, textDumps: [], version: 1 };
+}
+
+/**
+ * Builds a backward-compatible Q&A list from the new applicantContext.
+ * This produces the { question, answer } array format that deterministicMatcher.js
+ * and the dropdown matcher prompt expect.
  * @async
  * @returns {Promise<Array<{question: string, answer: string}>>}
- *   The stored qaList array, or an empty array if none exists.
  */
 async function getQAList() {
-  const result = await chrome.storage.local.get('qaList');
-  return result.qaList || [];
+  const ctx = await getApplicantContext();
+  const qaList = [];
+
+  // Map from intake question IDs back to the old Q&A question text
+  const REVERSE_MAP = {
+    'personal-details.first_name': 'First Name',
+    'personal-details.last_name': 'Last Name',
+    'personal-details.email': 'Email Address',
+    'personal-details.phone': 'Phone Number',
+    'personal-details.street_address': 'Street Address',
+    'personal-details.address_line_2': 'Street Address Line 2 (Apt, Suite, Unit)',
+    'personal-details.city': 'City',
+    'personal-details.state': 'State / Province',
+    'personal-details.zip_code': 'ZIP / Postal Code',
+    'personal-details.country': 'Country',
+    'personal-details.current_title': 'Current Job Title',
+    'personal-details.current_employer': 'Current Employer / Company',
+    'personal-details.linkedin_url': 'LinkedIn Profile URL',
+    'personal-details.portfolio_url': 'Portfolio / Personal Website URL',
+    'personal-details.github_url': 'GitHub Profile URL',
+    'personal-details.gender': 'Gender',
+    'personal-details.gender_identity': 'Gender identity',
+    'personal-details.sexual_orientation': 'Sexual orientation',
+    'personal-details.pronouns': 'Pronouns',
+    'personal-details.race_ethnicity': 'Race / Ethnicity',
+    'personal-details.hispanic_latino': 'Are you Hispanic or Latino?',
+    'personal-details.veteran_status': 'Veteran status',
+    'personal-details.disability_status': 'Disability status',
+    'personal-details.age_18': 'Are you at least 18 years of age?',
+    'personal-details.accommodation': 'Able to perform essential functions of the job with or without accommodation?',
+    'personal-details.how_heard': 'How did you hear about this position?',
+    'personal-details.anything_else': 'Is there anything else you would like us to know?',
+    'work-preferences.work_auth': 'Are you legally authorized to work in the United States?',
+    'work-preferences.sponsorship': 'Will you now or in the future require sponsorship for employment visa status (e.g., H-1B)?',
+    'work-preferences.auth_status': 'Work authorization status',
+    'work-preferences.start_date': 'Earliest available start date',
+    'work-preferences.notice_period': 'Notice period for current employer',
+    'work-preferences.employment_type': 'Desired employment type',
+    'work-preferences.desired_salary': 'Desired annual salary (USD)',
+    'work-preferences.hourly_rate': 'Desired hourly rate (if applicable)',
+    'work-preferences.work_arrangement': 'Preferred work arrangement',
+    'work-preferences.willing_relocate': 'Willing to relocate?',
+    'work-preferences.travel_willingness': 'Willingness to travel',
+    'work-preferences.background_check': 'Willing to undergo a background check?',
+    'work-preferences.drug_test': 'Willing to undergo a drug test?',
+    'work-preferences.drivers_license': "Do you have a valid driver's license?",
+    'work-preferences.security_clearance': 'Security clearance',
+    'education.highest_education': 'Highest level of education completed',
+    'education.certifications': 'Relevant certifications or professional licenses',
+  };
+
+  // Walk all sections and build Q&A entries
+  for (const [sectionId, answers] of Object.entries(ctx.sections || {})) {
+    for (const [questionId, answer] of Object.entries(answers || {})) {
+      if (!answer || !answer.trim()) continue;
+      const key = `${sectionId}.${questionId}`;
+      const questionText = REVERSE_MAP[key] || questionId.replace(/_/g, ' ');
+      qaList.push({ question: questionText, answer });
+    }
+  }
+
+  // Fall back to legacy qaList if the new context is empty
+  if (qaList.length === 0) {
+    const result = await chrome.storage.local.get('qaList');
+    return result.qaList || [];
+  }
+
+  return qaList;
+}
+
+/**
+ * Builds a rich context string from applicantContext for AI prompts.
+ * Richer than the old Q&A format — includes career goals, experience highlights,
+ * and text dump excerpts.
+ * @async
+ * @returns {Promise<string>} Formatted context string for AI prompts.
+ */
+async function buildRichContextForPrompt() {
+  const ctx = await getApplicantContext();
+  const parts = [];
+
+  // Section labels for readable output
+  const SECTION_LABELS = {
+    'career-goals': 'Career Goals',
+    'professional-summary': 'Professional Summary',
+    'experience-highlights': 'Experience Highlights',
+    'education': 'Education',
+    'work-preferences': 'Work Preferences',
+    'personal-details': 'Personal Details',
+  };
+
+  for (const [sectionId, answers] of Object.entries(ctx.sections || {})) {
+    const lines = [];
+    for (const [qId, answer] of Object.entries(answers || {})) {
+      if (answer && answer.trim()) {
+        lines.push(`${qId.replace(/_/g, ' ')}: ${answer}`);
+      }
+    }
+    if (lines.length > 0) {
+      parts.push(`=== ${SECTION_LABELS[sectionId] || sectionId} ===\n${lines.join('\n')}`);
+    }
+  }
+
+  // Text dumps
+  const dumps = (ctx.textDumps || []).filter(d => d.content?.trim());
+  if (dumps.length > 0) {
+    const dumpTexts = dumps.map(d => `--- ${d.label} ---\n${d.content.substring(0, 5000)}`);
+    parts.push(`=== Additional Context ===\n${dumpTexts.join('\n\n')}`);
+  }
+
+  return parts.join('\n\n');
 }
 
 /**
@@ -164,6 +279,26 @@ async function getSavedJobs() {
   return result.savedJobs || [];
 }
 
+
+// ─── Profile enrichment ─────────────────────────────────────────────────────
+
+/**
+ * Enriches a profile object with applicant context data so prompt builders
+ * automatically include career goals, experience highlights, text dumps, etc.
+ * The enriched profile includes an `applicantContext` field that prompt builders
+ * will serialize as part of the profile JSON.
+ *
+ * @async
+ * @param {Object} profile - The user's parsed resume profile.
+ * @returns {Promise<Object>} Profile with additional context fields.
+ */
+async function enrichProfileWithContext(profile) {
+  if (!profile) return profile;
+  const ctx = await getApplicantContext();
+  const richContext = await buildRichContextForPrompt();
+  if (!richContext) return profile;
+  return { ...profile, applicantContext: richContext };
+}
 
 // ─── AI operation handlers ───────────────────────────────────────────────────
 //
@@ -258,8 +393,12 @@ async function handleAnalyzeJob(jobDescription, jobTitle, company) {
   const signedIn = await isSignedIn();
   if (signedIn) {
     try {
+      const richContext = await buildRichContextForPrompt();
       const result = await callEdgeFunction('generate-answer', {
-        question: `Analyze this job posting and provide a JSON object with: score (0-100), matchHighlights (array of strings), gapAnalysis (array of strings), missingSkills (array of strings), atsKeywords (array of strings), insights (string), salaryEstimate (string or null). Be thorough but concise.`,
+        question: `Analyze this job posting and provide a JSON object with: score (0-100), matchHighlights (array of strings), gapAnalysis (array of strings), missingSkills (array of strings), atsKeywords (array of strings), insights (string), salaryEstimate (string or null). Be thorough but concise.
+
+APPLICANT CONTEXT (use career goals and target roles for more relevant scoring):
+${richContext}`,
         jd_text: truncatedJD,
         jd_company: company,
         jd_role: jobTitle,
@@ -290,7 +429,8 @@ async function handleAnalyzeJob(jobDescription, jobTitle, company) {
   const settings = await getSettings();
   if (!settings.apiKey) throw new Error('No API key configured. Sign in with Google or go to Profile → AI Settings.');
 
-  const messages = buildJobAnalysisPrompt(profile, truncatedJD, jobTitle, company);
+  const enrichedProfile = await enrichProfileWithContext(profile);
+  const messages = buildJobAnalysisPrompt(enrichedProfile, truncatedJD, jobTitle, company);
   const result = await callAI(settings.provider, settings.apiKey, messages, {
     model: settings.model,
     temperature: 0,
@@ -323,14 +463,14 @@ async function handleGenerateAutofill(formFields) {
   const signedIn = await isSignedIn();
   if (signedIn) {
     try {
-      const qaList = await getQAList();
+      const richContext = await buildRichContextForPrompt();
       // Send each field as a question to the edge function, batched in one call
       const fieldQuestions = formFields.map(f =>
         `Form field "${f.label || f.name}" (type: ${f.type}${f.options ? ', options: ' + f.options.join(', ') : ''})`
       ).join('\n');
 
       const result = await callEdgeFunction('generate-answer', {
-        question: `Fill out these job application form fields based on my profile and Q&A answers:\n\n${fieldQuestions}\n\nRespond with a JSON object mapping each field label to its suggested value.`,
+        question: `Fill out these job application form fields based on my profile, context, and Q&A answers:\n\n${fieldQuestions}\n\nAPPLICANT CONTEXT:\n${richContext}\n\nRespond with a JSON object mapping each field label to its suggested value.`,
         user_profile: {
           full_name: profile.name,
           headline: profile.summary?.substring(0, 200),
@@ -581,13 +721,17 @@ async function handleGenerateCoverLetter(jobDescription, analysis) {
   const signedIn = await isSignedIn();
   if (signedIn) {
     try {
+      const richContext = await buildRichContextForPrompt();
       const edgeResult = await callEdgeFunction('generate-answer', {
         question: `Write a professional cover letter for this job application. 4 paragraphs, 400-500 words total:
 Paragraph 1 — Hook: Why this specific company and role excites me. Mention the company by name.
 Paragraph 2 — Skills Match: Reference 2-3 specific achievements from my profile WITH numbers/metrics. Connect each to a job requirement.
 Paragraph 3 — Culture & Value Fit: Why I specifically am the right person — my unique background and perspective.
 Paragraph 4 — Closing: Confident call to action with availability.
-No address headers, no "Dear Hiring Manager", no signature, no placeholders. Start directly with paragraph one. No clichés. Use real details from my profile.`,
+No address headers, no "Dear Hiring Manager", no signature, no placeholders. Start directly with paragraph one. No clichés. Use real details from my profile.
+
+APPLICANT CONTEXT (use this for deeper personalization — career goals, motivations, experience highlights):
+${richContext}`,
         jd_text: truncatedJD,
         jd_company: analysis?.company || '',
         jd_role: analysis?.title || '',
@@ -618,7 +762,9 @@ No address headers, no "Dear Hiring Manager", no signature, no placeholders. Sta
   const settings = await getSettings();
   if (!settings.apiKey) throw new Error('No API key configured. Sign in with Google or go to Settings.');
 
-  const messages = buildCoverLetterPrompt(profile, truncatedJD, analysis);
+  // Enrich profile with applicant context so the prompt has deeper personalization
+  const enrichedProfile = await enrichProfileWithContext(profile);
+  const messages = buildCoverLetterPrompt(enrichedProfile, truncatedJD, analysis);
   const text = await callAI(settings.provider, settings.apiKey, messages, {
     model: settings.model,
     temperature: 0.4,
@@ -664,8 +810,12 @@ async function handleRewriteBullets(jobDescription, missingSkills) {
   const signedIn = await isSignedIn();
   if (signedIn) {
     try {
+      const richContext = await buildRichContextForPrompt();
       const edgeResult = await callEdgeFunction('generate-answer', {
-        question: `Rewrite my resume experience bullets to better target this job. Focus on these missing skills: ${(missingSkills || []).join(', ')}. Return a JSON object where keys are experience entry titles and values are arrays of rewritten bullet strings.`,
+        question: `Rewrite my resume experience bullets to better target this job. Focus on these missing skills: ${(missingSkills || []).join(', ')}. Return a JSON object where keys are experience entry titles and values are arrays of rewritten bullet strings.
+
+APPLICANT CONTEXT (use career goals and experience highlights for better framing):
+${richContext}`,
         jd_text: jobDescription,
         user_profile: {
           full_name: profile.name,
@@ -692,7 +842,8 @@ async function handleRewriteBullets(jobDescription, missingSkills) {
   const settings = await getSettings();
   if (!settings.apiKey) throw new Error('No API key configured. Sign in with Google or go to Settings.');
 
-  const messages = buildBulletRewritePrompt(profile, jobDescription, missingSkills);
+  const enrichedProfile = await enrichProfileWithContext(profile);
+  const messages = buildBulletRewritePrompt(enrichedProfile, jobDescription, missingSkills);
   const result = await callAI(settings.provider, settings.apiKey, messages, {
     model: settings.model,
     temperature: 0.2,
@@ -744,12 +895,16 @@ async function handleGenerateResume(jobDescription, jobTitle, company, customIns
   const signedIn = await isSignedIn();
   if (signedIn) {
     try {
+      const richContext = await buildRichContextForPrompt();
       const edgeResult = await callEdgeFunction('generate-answer', {
         question: `Generate an ATS-optimized resume tailored for this job. Target 90+ ATS score.
 Use standard section headings: SUMMARY, EXPERIENCE, SKILLS, EDUCATION, CERTIFICATIONS.
 Single column, no tables/graphics. Mirror JD keywords naturally. Quantify achievements.
 Do NOT fabricate experience or skills. DO reframe existing experience to match JD language.
-Return ONLY the resume in clean markdown. No commentary.${customInstructions ? '\n\nAdditional instructions: ' + customInstructions : ''}`,
+Return ONLY the resume in clean markdown. No commentary.${customInstructions ? '\n\nAdditional instructions: ' + customInstructions : ''}
+
+APPLICANT CONTEXT (use for career goals, education details, certifications, and additional experience context):
+${richContext}`,
         jd_text: truncatedJD,
         jd_company: company,
         jd_role: jobTitle,
@@ -781,7 +936,8 @@ Return ONLY the resume in clean markdown. No commentary.${customInstructions ? '
   const settings = await getSettings();
   if (!settings.apiKey) throw new Error('No API key configured. Sign in with Google or go to Settings.');
 
-  const messages = buildResumeGeneratePrompt(profile, truncatedJD, jobTitle, company, customInstructions);
+  const enrichedProfile = await enrichProfileWithContext(profile);
+  const messages = buildResumeGeneratePrompt(enrichedProfile, truncatedJD, jobTitle, company, customInstructions);
   const text = await callAI(settings.provider, settings.apiKey, messages, {
     model: settings.model,
     temperature: 0.2,
@@ -999,6 +1155,16 @@ const handlers = {
 
   'GET_QA_LIST': (msg) => getQAList(),
 
+  'SAVE_APPLICANT_CONTEXT': async (msg) => {
+    await chrome.storage.local.set({ applicantContext: msg.applicantContext });
+    return { success: true };
+  },
+
+  'GET_APPLICANT_CONTEXT': async (msg) => {
+    const result = await chrome.storage.local.get('applicantContext');
+    return result.applicantContext || { sections: {}, textDumps: [], version: 1 };
+  },
+
   // ── Job management ─────────────────────────────────────────────────────
   // CRUD operations for saved / applied job lists plus AI-assisted writing.
 
@@ -1183,7 +1349,8 @@ chrome.runtime.onInstalled.addListener((details) => {
       profileSlots: [null, null, null],           // Three resume slots (multi-profile feature)
       activeProfileSlot: 0,                       // Index of the currently active slot
       slotNames: ['Resume 1', 'Resume 2', 'Resume 3'], // Display names for each slot
-      qaList: [],        // Custom Q&A pairs for autofill (empty on fresh install)
+      qaList: [],        // Legacy Q&A pairs (kept for migration path)
+      applicantContext: { sections: {}, textDumps: [], version: 1 }, // New intake flow context
       savedJobs: [],     // Bookmarked job postings
       appliedJobs: []    // Jobs the user has submitted applications for
     });

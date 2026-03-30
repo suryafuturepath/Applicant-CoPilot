@@ -297,59 +297,200 @@
 
     .entry-header h4 { font-size: 14px; color: var(--ac-text); }
 
-    /* Q&A section */
-    #qaList {
+    /* Intake flow */
+    .intake-layout {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
+      grid-template-columns: 220px 1fr;
+      gap: 20px;
+      min-height: 500px;
     }
 
-    .qa-entry {
-      grid-column: span 2;
+    .intake-sidebar {
+      border-right: 1px solid var(--ac-border);
+      padding-right: 16px;
+    }
+
+    .intake-sidebar-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--ac-text-secondary);
+      transition: all 0.15s;
+      margin-bottom: 4px;
+    }
+
+    .intake-sidebar-item:hover { background: var(--ac-hover-bg); }
+    .intake-sidebar-item.active { background: var(--ac-hover-bg); color: var(--ac-text); font-weight: 600; }
+    .intake-sidebar-item.complete { color: #059669; }
+
+    .intake-sidebar-icon {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid var(--ac-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+
+    .intake-sidebar-item.complete .intake-sidebar-icon {
+      background: #d1fae5;
+      border-color: #059669;
+      color: #059669;
+    }
+
+    .intake-sidebar-item.active .intake-sidebar-icon {
+      border-color: var(--ac-primary);
+      color: var(--ac-primary);
+    }
+
+    .intake-progress-bar {
+      height: 6px;
+      background: var(--ac-border);
+      border-radius: 3px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+
+    .intake-progress-fill {
+      height: 100%;
+      background: var(--ac-primary);
+      border-radius: 3px;
+      transition: width 0.3s ease;
+    }
+
+    .intake-main { padding: 0 4px; }
+
+    .intake-section-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--ac-text);
+      margin-bottom: 4px;
+    }
+
+    .intake-section-desc {
+      font-size: 13px;
+      color: var(--ac-text-secondary);
+      margin-bottom: 24px;
+    }
+
+    .intake-question-label {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ac-text);
+      margin-bottom: 8px;
+    }
+
+    .intake-question-hint {
+      font-size: 12px;
+      color: var(--ac-text-muted);
+      margin-bottom: 8px;
+    }
+
+    .intake-answer-input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--ac-border);
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      background: var(--ac-input-bg);
+      color: var(--ac-text);
+      transition: border-color 0.2s;
+      margin-bottom: 16px;
+    }
+
+    .intake-answer-input:focus {
+      outline: none;
+      border-color: var(--ac-primary);
+      box-shadow: 0 0 0 3px var(--ac-shadow);
+    }
+
+    textarea.intake-answer-input { min-height: 80px; resize: vertical; }
+
+    .intake-nav {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      padding-top: 16px;
+      border-top: 1px solid var(--ac-border);
+    }
+
+    .intake-nav .btn { min-width: 90px; }
+    .intake-nav .spacer { flex: 1; }
+
+    .intake-question-counter {
+      font-size: 12px;
+      color: var(--ac-text-muted);
+      margin-bottom: 16px;
+    }
+
+    /* Review screen */
+    .intake-review-section {
+      margin-bottom: 20px;
       border: 1px solid var(--ac-border);
       border-radius: 8px;
       padding: 16px;
     }
 
-    .qa-entry.qa-compact {
-      grid-column: span 1;
-      padding: 10px 12px;
+    .intake-review-section h3 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: var(--ac-text);
+      cursor: pointer;
     }
 
-    .qa-entry label { font-weight: 600; }
+    .intake-review-section h3:hover { color: var(--ac-primary); }
 
-    .qa-compact-header {
+    .intake-review-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 6px 0;
+      font-size: 13px;
+      border-bottom: 1px solid var(--ac-border);
+    }
+
+    .intake-review-item:last-child { border-bottom: none; }
+
+    .intake-review-q { color: var(--ac-text-secondary); flex: 0 0 40%; }
+    .intake-review-a { color: var(--ac-text); flex: 1; text-align: right; }
+    .intake-review-a.empty { color: var(--ac-text-muted); font-style: italic; }
+
+    /* Text dump section */
+    .text-dump-entry {
+      border: 1px solid var(--ac-border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+
+    .text-dump-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 6px;
+      margin-bottom: 8px;
     }
 
-    .qa-compact-header label {
+    .text-dump-header select {
+      width: auto;
+      margin-bottom: 0;
+      padding: 4px 8px;
       font-size: 12px;
-      margin-bottom: 0;
-      flex: 1;
-      min-width: 0;
     }
 
-    .qa-compact input[type="text"],
-    .qa-compact select {
-      margin-bottom: 0;
-      padding: 7px 10px;
-      font-size: 13px;
-    }
-
-    .qa-compact textarea {
-      min-height: 50px;
-      margin-bottom: 0;
-      padding: 7px 10px;
-      font-size: 13px;
-    }
-
-    .qa-compact .qa-category-badge {
-      font-size: 9px;
-      padding: 0 6px;
-      margin-left: 4px;
+    .text-dump-char-count {
+      font-size: 11px;
+      color: var(--ac-text-muted);
+      text-align: right;
+      margin-top: 4px;
     }
 
     /* API key */
@@ -425,32 +566,7 @@
       min-height: 16px;
     }
 
-    .qa-filter-btn { background: var(--ac-border); color: var(--ac-text-secondary); border: 1px solid transparent; }
-    .qa-filter-btn:hover { background: var(--ac-hover-bg); }
-    .qa-filter-btn.active { background: var(--ac-primary); color: white; border-color: var(--ac-primary); }
-
-    .qa-entry .qa-category-badge {
-      display: inline-block;
-      padding: 1px 8px;
-      border-radius: 4px;
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-      margin-left: 8px;
-      vertical-align: middle;
-    }
-
-    .qa-cat-personal { background: #ccfbf1; color: #0f766e; }
-    .qa-cat-work-auth { background: #dbeafe; color: #1d4ed8; }
-    .qa-cat-availability { background: #fef3c7; color: #92400e; }
-    .qa-cat-salary { background: #d1fae5; color: #065f46; }
-    .qa-cat-background { background: #fce7f3; color: #9d174d; }
-    .qa-cat-relocation { background: #dbeafe; color: #1e40af; }
-    .qa-cat-referral { background: #eff6ff; color: #3b82f6; }
-    .qa-cat-demographics { background: #fef9c3; color: #854d0e; }
-    .qa-cat-general { background: #e2e8f0; color: #475569; }
-    .qa-cat-custom { background: #f1f5f9; color: #64748b; }
+    /* Legacy Q&A filter styles removed — replaced by intake flow */
 
     .badge-free {
       display: inline-block;
@@ -592,7 +708,7 @@
 
   <div class="tabs">
     <div class="tab active" data-tab="profile">Profile</div>
-    <div class="tab" data-tab="qa">Q&A Answers</div>
+    <div class="tab" data-tab="qa">My Context</div>
     <div class="tab" data-tab="applied">Applied Jobs</div>
     <div class="tab" data-tab="stats">Stats</div>
     <div class="tab" data-tab="settings">AI Settings</div>
@@ -691,39 +807,19 @@
       </div>
     </div>
 
-    <!-- ─── Q&A Tab ─────────────────────────────────────── -->
+    <!-- ─── Intake Flow Tab (replaces Q&A) ─────────────── -->
     <div class="tab-content" id="tab-qa">
       <div class="card">
-        <h2>Common Application Q&A <span id="qaCount" style="font-size:13px;font-weight:400;color:#64748b;"></span></h2>
-        <p style="font-size:13px;color:#64748b;margin-bottom:8px;">
-          Pre-fill answers to common job application questions. These will be used during autofill.
+        <h2>Build Your Applicant Context</h2>
+        <p style="font-size:13px;color:var(--ac-text-secondary);margin-bottom:16px;">
+          Walk through these sections to build a rich profile. The better we know you, the better your autofill answers will be.
         </p>
-        <div id="loadQASection" style="margin-bottom:16px;">
-          <button class="btn btn-primary btn-sm" id="loadDefaultQABtn">Load Common US Job Application Questions</button>
-          <p style="font-size:11px;color:#94a3b8;margin-top:4px;">
-            Loads ~25 commonly asked questions across work authorization, availability, salary, background, and more.
-          </p>
+        <div class="intake-progress-bar">
+          <div class="intake-progress-fill" id="intakeProgressFill" style="width:0%"></div>
         </div>
-        <div id="qaCategoryFilter" style="display:none;margin-bottom:16px;">
-          <label style="margin-bottom:6px;">Filter by category:</label>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;">
-            <button class="btn btn-sm qa-filter-btn active" data-cat="all">All</button>
-            <button class="btn btn-sm qa-filter-btn" data-cat="personal">Personal / Address</button>
-            <button class="btn btn-sm qa-filter-btn" data-cat="work-auth">Work Authorization</button>
-            <button class="btn btn-sm qa-filter-btn" data-cat="availability">Availability</button>
-            <button class="btn btn-sm qa-filter-btn" data-cat="salary">Salary</button>
-            <button class="btn btn-sm qa-filter-btn" data-cat="background">Background</button>
-            <button class="btn btn-sm qa-filter-btn" data-cat="relocation">Relocation</button>
-            <button class="btn btn-sm qa-filter-btn" data-cat="referral">Referral & Links</button>
-            <button class="btn btn-sm qa-filter-btn" data-cat="demographics">Demographics / EEO</button>
-            <button class="btn btn-sm qa-filter-btn" data-cat="general">General</button>
-            <button class="btn btn-sm qa-filter-btn" data-cat="custom">Custom</button>
-          </div>
-        </div>
-        <div id="qaList"></div>
-        <button class="btn btn-secondary btn-sm" id="addQABtn">+ Add Q&A</button>
-        <div style="text-align: right; margin-top: 16px;">
-          <button class="btn btn-primary" id="saveQABtn">Save Q&A Answers</button>
+        <div class="intake-layout">
+          <div class="intake-sidebar" id="intakeSidebar"></div>
+          <div class="intake-main" id="intakeMain"></div>
         </div>
       </div>
     </div>

@@ -73,9 +73,7 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 /**
- * In-memory list of Q&A entries displayed in the Q&A tab.
- * Each entry: { question, answer, category, type, options? }
- * Loaded from storage on init and flushed via SAVE_QA_LIST.
+ * Legacy Q&A list — kept only for one-time migration to applicantContext.
  * @type {Array<{question: string, answer: string, category: string, type: string, options?: string[]}>}
  */
 let qaList = [];
@@ -249,6 +247,9 @@ async function handleFile(file) {
     showResumeLoaded(file.name);
     setUploadStatus('Resume parsed successfully! Review and edit below.', 'success');
     markProfileDirty();
+    // Also prefill intake context from the newly parsed resume
+    prefillFromProfile(profileData);
+    renderIntakeFlow();
   } catch (err) {
     setUploadStatus('Error: ' + err.message, 'error');
   }
@@ -640,331 +641,612 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
   }
 });
 
-// ─── Q&A rendering ────────────────────────────────────────────────────────────
+// ─── Intake Flow Engine ─────────────────────────────────────────────────────
+// Replaces the old static Q&A with a guided conversational intake flow.
+// Produces a rich applicantContext that powers all downstream AI features.
+
+const MAX_TEXT_DUMPS = 5;
+const MAX_TEXT_DUMP_CHARS = 20000;
 
 /**
- * Clears and re-renders the entire Q&A list from the `qaList` array.
- *
- * Rendering rules per entry type:
- *   - 'custom' (no category or category === 'custom'): editable question label +
- *     textarea answer — the user owns both fields.
- *   - 'dropdown': fixed question label + <select> populated from entry.options.
- *   - 'short': fixed question label + single-line <input>.
- *   - 'text' (fallback): fixed question label + multi-line <textarea>.
- *
- * Compact display (qa-compact class) is applied to 'short' and 'dropdown' entries
- * that belong to a built-in category, keeping the list visually dense.
- *
- * Applies the active category filter (`activeQAFilter`) to hide irrelevant entries.
+ * All intake sections with their questions.
+ * Each question: { id, text, type, hint?, options?, required? }
  */
-function renderQA() {
-  const list = document.getElementById('qaList');
-  list.innerHTML = '';
+const INTAKE_SECTIONS = [
+  {
+    id: 'career-goals',
+    title: 'Career Goals',
+    description: 'Help us understand what you\'re looking for so we can tailor your applications.',
+    icon: '&#9733;',
+    required: true,
+    questions: [
+      { id: 'target_roles', text: 'What kind of roles are you targeting?', type: 'textarea', hint: 'e.g., Product Manager, Software Engineer, Data Scientist', required: true },
+      { id: 'ideal_role', text: 'What\'s your ideal next role?', type: 'textarea', hint: 'Describe the role, team size, and impact you want to make' },
+      { id: 'target_industries', text: 'What industries interest you?', type: 'text', hint: 'e.g., fintech, healthcare, AI/ML, e-commerce' },
+      { id: 'search_stage', text: 'Where are you in your job search?', type: 'select', options: ['', 'Just exploring', 'Just started applying', 'Actively applying', 'Being selective / have offers'] },
+      { id: 'career_motivations', text: 'What motivates you in your career?', type: 'textarea', hint: 'What drives you? Impact, growth, compensation, mission, etc.' },
+    ]
+  },
+  {
+    id: 'professional-summary',
+    title: 'Professional Summary',
+    description: 'A quick snapshot of who you are professionally.',
+    icon: '&#128188;',
+    required: true,
+    questions: [
+      { id: 'elevator_pitch', text: 'Give me a 2-3 sentence elevator pitch about yourself.', type: 'textarea', hint: 'How would you introduce yourself at a networking event?', required: true },
+      { id: 'top_skills', text: 'What are your top 3-5 skills?', type: 'text', hint: 'e.g., Python, product strategy, stakeholder management' },
+      { id: 'years_experience', text: 'How many years of professional experience do you have?', type: 'text', hint: 'e.g., 5 years, 10+ years' },
+      { id: 'unique_value', text: 'What makes you stand out from other candidates?', type: 'textarea', hint: 'Your unique combination of skills, experiences, or perspective' },
+    ]
+  },
+  {
+    id: 'experience-highlights',
+    title: 'Experience Highlights',
+    description: 'Tell us about your most impactful work.',
+    icon: '&#128640;',
+    required: true,
+    questions: [
+      { id: 'recent_role', text: 'Tell me about your most recent role — what did you do, and what was the impact?', type: 'textarea', required: true },
+      { id: 'proudest_achievement', text: 'What\'s your proudest professional achievement?', type: 'textarea', hint: 'Include specific metrics or outcomes if possible' },
+      { id: 'daily_tools', text: 'What technical tools, frameworks, or methodologies do you use daily?', type: 'textarea', hint: 'e.g., React, Python, Agile/Scrum, Figma, SQL' },
+      { id: 'leadership_example', text: 'Describe a time you led a project or mentored someone.', type: 'textarea', hint: 'Optional — skip if not applicable' },
+    ]
+  },
+  {
+    id: 'education',
+    title: 'Education',
+    description: 'Your academic background and certifications.',
+    icon: '&#127891;',
+    required: true,
+    questions: [
+      { id: 'highest_education', text: 'What\'s your highest level of education?', type: 'select', options: ['', 'High School Diploma / GED', 'Some College (no degree)', "Associate's Degree", "Bachelor's Degree (BA/BS)", "Master's Degree (MA/MS/MBA)", 'Doctorate (PhD/EdD)', 'Professional Degree (JD/MD/DDS)'], required: true },
+      { id: 'field_of_study', text: 'What did you study?', type: 'text', hint: 'e.g., Computer Science, Business Administration, Economics' },
+      { id: 'school_name', text: 'Where did you study?', type: 'text', hint: 'University or institution name' },
+      { id: 'certifications', text: 'Any relevant certifications or licenses?', type: 'textarea', hint: 'e.g., PMP, AWS Solutions Architect, CPA' },
+    ]
+  },
+  {
+    id: 'work-preferences',
+    title: 'Work Preferences',
+    description: 'Salary, location, authorization — the practical details applications ask about.',
+    icon: '&#9881;',
+    required: false,
+    questions: [
+      { id: 'desired_salary', text: 'Desired annual salary (USD)', type: 'text', hint: 'e.g., $120,000 or $100k-130k' },
+      { id: 'hourly_rate', text: 'Desired hourly rate (if applicable)', type: 'text' },
+      { id: 'work_arrangement', text: 'Preferred work arrangement', type: 'select', options: ['', 'On-site', 'Hybrid', 'Remote', 'Flexible / Any'] },
+      { id: 'location_preference', text: 'Location preferences', type: 'text', hint: 'e.g., San Francisco Bay Area, open to anywhere remote' },
+      { id: 'work_auth', text: 'Are you legally authorized to work in the United States?', type: 'select', options: ['', 'Yes', 'No'] },
+      { id: 'sponsorship', text: 'Will you require visa sponsorship (e.g., H-1B)?', type: 'select', options: ['', 'Yes', 'No'] },
+      { id: 'auth_status', text: 'Work authorization status', type: 'select', options: ['', 'U.S. Citizen', 'Green Card Holder', 'H-1B Visa', 'EAD / OPT', 'TN Visa', 'L-1 Visa', 'Other'] },
+      { id: 'start_date', text: 'Earliest available start date', type: 'text', hint: 'e.g., Immediately, 2 weeks, March 2026' },
+      { id: 'notice_period', text: 'Notice period for current employer', type: 'select', options: ['', 'Immediately available', '1 week', '2 weeks', '3 weeks', '1 month', 'More than 1 month'] },
+      { id: 'employment_type', text: 'Desired employment type', type: 'select', options: ['', 'Full-time', 'Part-time', 'Contract', 'Internship', 'Any'] },
+      { id: 'willing_relocate', text: 'Willing to relocate?', type: 'select', options: ['', 'Yes', 'No', 'Open to discussion'] },
+      { id: 'travel_willingness', text: 'Willingness to travel', type: 'select', options: ['', 'No travel', 'Up to 25%', 'Up to 50%', 'Up to 75%', '100% / Full-time travel'] },
+      { id: 'background_check', text: 'Willing to undergo a background check?', type: 'select', options: ['', 'Yes', 'No'] },
+      { id: 'drug_test', text: 'Willing to undergo a drug test?', type: 'select', options: ['', 'Yes', 'No'] },
+      { id: 'drivers_license', text: 'Do you have a valid driver\'s license?', type: 'select', options: ['', 'Yes', 'No'] },
+      { id: 'security_clearance', text: 'Security clearance', type: 'select', options: ['', 'None', 'Confidential', 'Secret', 'Top Secret', 'TS/SCI', 'Eligible but do not currently hold'] },
+    ]
+  },
+  {
+    id: 'personal-details',
+    title: 'Personal Details',
+    description: 'Basic contact info and optional demographics that applications commonly ask for.',
+    icon: '&#128100;',
+    required: false,
+    questions: [
+      { id: 'first_name', text: 'First Name', type: 'text' },
+      { id: 'last_name', text: 'Last Name', type: 'text' },
+      { id: 'email', text: 'Email Address', type: 'text' },
+      { id: 'phone', text: 'Phone Number', type: 'text' },
+      { id: 'street_address', text: 'Street Address', type: 'text' },
+      { id: 'address_line_2', text: 'Address Line 2 (Apt, Suite, Unit)', type: 'text' },
+      { id: 'city', text: 'City', type: 'text' },
+      { id: 'state', text: 'State / Province', type: 'text', hint: 'e.g., CA, NY, TX' },
+      { id: 'zip_code', text: 'ZIP / Postal Code', type: 'text' },
+      { id: 'country', text: 'Country', type: 'select', options: ['', 'United States', 'Canada', 'United Kingdom', 'India', 'Australia', 'Germany', 'France', 'Mexico', 'Brazil', 'Other'] },
+      { id: 'linkedin_url', text: 'LinkedIn Profile URL', type: 'text' },
+      { id: 'portfolio_url', text: 'Portfolio / Website URL', type: 'text' },
+      { id: 'github_url', text: 'GitHub Profile URL', type: 'text' },
+      { id: 'current_title', text: 'Current Job Title', type: 'text' },
+      { id: 'current_employer', text: 'Current Employer / Company', type: 'text' },
+      { id: 'gender', text: 'Gender', type: 'select', options: ['', 'Male', 'Female', 'Non-binary', 'Other', 'Prefer not to say'] },
+      { id: 'gender_identity', text: 'Gender identity', type: 'select', options: ['', 'Man', 'Woman', 'Non-binary', 'Genderqueer / Genderfluid', 'Agender', 'Two-Spirit', 'Other', 'Prefer not to say'] },
+      { id: 'sexual_orientation', text: 'Sexual orientation', type: 'select', options: ['', 'Straight / Heterosexual', 'Gay or Lesbian', 'Bisexual', 'Pansexual', 'Asexual', 'Queer', 'Other', 'Prefer not to say'] },
+      { id: 'pronouns', text: 'Pronouns', type: 'select', options: ['', 'He/Him', 'She/Her', 'They/Them', 'He/They', 'She/They', 'Other', 'Prefer not to say'] },
+      { id: 'race_ethnicity', text: 'Race / Ethnicity', type: 'select', options: ['', 'American Indian or Alaska Native', 'Asian', 'Black or African American', 'Hispanic or Latino', 'Native Hawaiian or Pacific Islander', 'White', 'Two or more races', 'Other', 'Prefer not to say'] },
+      { id: 'hispanic_latino', text: 'Are you Hispanic or Latino?', type: 'select', options: ['', 'Yes', 'No', 'Decline to self-identify'] },
+      { id: 'veteran_status', text: 'Veteran status', type: 'select', options: ['', 'I am not a protected veteran', 'I identify as one or more of the classifications of a protected veteran', 'I am a disabled veteran', 'Decline to self-identify'] },
+      { id: 'disability_status', text: 'Disability status', type: 'select', options: ['', 'Yes, I have a disability (or previously had a disability)', 'No, I do not have a disability', 'I do not want to answer'] },
+      { id: 'age_18', text: 'Are you at least 18 years of age?', type: 'select', options: ['', 'Yes', 'No'] },
+      { id: 'accommodation', text: 'Able to perform essential functions of the job with or without accommodation?', type: 'select', options: ['', 'Yes', 'No'] },
+      { id: 'how_heard', text: 'How did you hear about this position? (default answer)', type: 'select', options: ['', 'Company Website', 'LinkedIn', 'Indeed', 'Glassdoor', 'Employee Referral', 'Recruiter / Staffing Agency', 'University / Career Fair', 'Google Search', 'Social Media', 'Job Board (other)', 'Other'] },
+      { id: 'anything_else', text: 'Is there anything else you would like employers to know?', type: 'textarea' },
+    ]
+  },
+  {
+    id: 'text-dumps',
+    title: 'Text Dumps',
+    description: 'Paste your resume, LinkedIn About, cover letter, or any text that describes your experience.',
+    icon: '&#128203;',
+    required: false,
+    questions: [] // Special section — rendered separately
+  }
+];
 
-  // Show current count near the Q&A section header
-  const countEl = document.getElementById('qaCount');
-  if (countEl) countEl.textContent = `${qaList.length} / 200`;
+/**
+ * In-memory applicant context. Loaded from chrome.storage on init.
+ * @type {{ sections: Object<string, Object<string, string>>, textDumps: Array, version: number, completedAt?: string }}
+ */
+let applicantContext = { sections: {}, textDumps: [], version: 1 };
 
-  // Only show the category filter toolbar if at least one entry has a category
-  const hasCategorized = qaList.some(q => q.category);
-  const filterEl = document.getElementById('qaCategoryFilter');
-  if (filterEl) filterEl.style.display = hasCategorized ? 'block' : 'none';
+/** Currently active section index and question index within that section. */
+let currentSectionIdx = 0;
+let currentQuestionIdx = 0;
 
-  // Once the list is large enough the "Load common questions" button is no longer useful
-  const loadBtn = document.getElementById('loadDefaultQABtn');
-  if (loadBtn && qaList.length >= 10) loadBtn.style.display = 'none';
+/** Current view mode: 'flow' (one question at a time) or 'review' */
+let intakeViewMode = 'flow';
 
-  // Human-readable labels for each category slug used in badge rendering
-  const categoryLabels = {
-    'personal':     'Personal',
-    'work-auth':    'Work Auth',
-    'availability': 'Availability',
-    'salary':       'Salary',
-    'background':   'Background',
-    'relocation':   'Relocation',
-    'referral':     'Referral',
-    'demographics': 'Demographics',
-    'general':      'General',
-    'custom':       'Custom'
-  };
+/** Debounce timer for auto-saving context */
+let _intakeSaveTimer = null;
 
-  let visibleCount = 0;
-  qaList.forEach((qa, i) => {
-    // Treat entries without a category as 'custom' for filter matching
-    const cat = qa.category || 'custom';
-    // Skip entries that don't match the active filter (unless filter is 'all')
-    if (activeQAFilter !== 'all' && cat !== activeQAFilter) return;
-    visibleCount++;
-
-    const qType = qa.type || 'text';
-    // An entry is "custom" if it has no category or its category is literally 'custom'
-    const isCustom  = !qa.category || qa.category === 'custom';
-    // Compact layout is used for brief built-in questions to reduce vertical space
-    const isCompact = (qType === 'short' || qType === 'dropdown') && !isCustom;
-
-    const div = document.createElement('div');
-    div.className = 'qa-entry' + (isCompact ? ' qa-compact' : '');
-
-    // Build the coloured category badge HTML (empty string if no category)
-    const badge = qa.category
-      ? `<span class="qa-category-badge qa-cat-${cat}">${categoryLabels[cat] || cat}</span>`
-      : '';
-
-    if (isCustom) {
-      // Custom entries: both the question text and the answer are user-editable
-      div.innerHTML = `
-        <div class="qa-compact-header">
-          <label>Q&A #${i + 1}${badge}</label>
-          <button class="btn btn-danger btn-sm remove-qa" data-idx="${i}">&times;</button>
-        </div>
-        <input type="text" data-field="question" value="${escapeAttr(qa.question || '')}" placeholder="Enter your question...">
-        <textarea data-field="answer" rows="2" placeholder="Your answer...">${escapeHTML(qa.answer || '')}</textarea>
-      `;
-    } else if (qType === 'dropdown') {
-      // Dropdown: question is fixed, answer is chosen from a <select>
-      const optionsHTML = (qa.options || []).map(opt =>
-        `<option value="${escapeAttr(opt)}"${qa.answer === opt ? ' selected' : ''}>${escapeHTML(opt || '-- Select --')}</option>`
-      ).join('');
-      div.innerHTML = `
-        <div class="qa-compact-header">
-          <label>${escapeHTML(qa.question)}${badge}</label>
-          <button class="btn btn-danger btn-sm remove-qa" data-idx="${i}">&times;</button>
-        </div>
-        <select data-field="answer">${optionsHTML}</select>
-      `;
-    } else if (qType === 'short') {
-      // Short text: single-line input for brief answers (name, salary, dates, etc.)
-      div.innerHTML = `
-        <div class="qa-compact-header">
-          <label>${escapeHTML(qa.question)}${badge}</label>
-          <button class="btn btn-danger btn-sm remove-qa" data-idx="${i}">&times;</button>
-        </div>
-        <input type="text" data-field="answer" value="${escapeAttr(qa.answer || '')}" placeholder="Enter...">
-      `;
-    } else {
-      // Textarea (type === 'text'): multi-line input for longer free-text answers
-      div.innerHTML = `
-        <div class="qa-compact-header">
-          <label>${escapeHTML(qa.question)}${badge}</label>
-          <button class="btn btn-danger btn-sm remove-qa" data-idx="${i}">&times;</button>
-        </div>
-        <textarea data-field="answer" rows="2" placeholder="Your answer...">${escapeHTML(qa.answer || '')}</textarea>
-      `;
+/**
+ * Debounced save of applicantContext to chrome.storage via background.
+ */
+function scheduleIntakeSave() {
+  if (_intakeSaveTimer) clearTimeout(_intakeSaveTimer);
+  _intakeSaveTimer = setTimeout(async () => {
+    try {
+      await sendMessage({ type: 'SAVE_APPLICANT_CONTEXT', applicantContext });
+    } catch (err) {
+      // Silently fail — auto-save is best-effort
     }
+  }, 800);
+}
 
-    // Remove: splice from qaList and re-render (all indices above i shift down by 1)
-    div.querySelector('.remove-qa').addEventListener('click', () => {
-      qaList.splice(i, 1);
-      renderQA();
+/**
+ * Gets the answer for a given section and question from applicantContext.
+ */
+function getAnswer(sectionId, questionId) {
+  return applicantContext.sections?.[sectionId]?.[questionId] || '';
+}
+
+/**
+ * Sets an answer and schedules a save.
+ */
+function setAnswer(sectionId, questionId, value) {
+  if (!applicantContext.sections[sectionId]) applicantContext.sections[sectionId] = {};
+  applicantContext.sections[sectionId][questionId] = value;
+  scheduleIntakeSave();
+}
+
+/**
+ * Calculates how many questions have been answered across all sections.
+ */
+function getCompletionStats() {
+  let total = 0;
+  let answered = 0;
+  for (const section of INTAKE_SECTIONS) {
+    if (section.id === 'text-dumps') continue;
+    for (const q of section.questions) {
+      total++;
+      if (getAnswer(section.id, q.id).trim()) answered++;
+    }
+  }
+  // Count text dumps as answered if any exist
+  if (applicantContext.textDumps?.length > 0) answered++;
+  total++; // text dumps count as one "question"
+  return { total, answered, percent: total > 0 ? Math.round((answered / total) * 100) : 0 };
+}
+
+/**
+ * Determines if a section has been "completed" (all required questions answered).
+ */
+function isSectionComplete(sectionId) {
+  const section = INTAKE_SECTIONS.find(s => s.id === sectionId);
+  if (!section) return false;
+  if (section.id === 'text-dumps') return (applicantContext.textDumps?.length || 0) > 0;
+  const requiredQs = section.questions.filter(q => q.required);
+  if (requiredQs.length === 0) {
+    // For optional sections, "complete" means at least one answer filled in
+    return section.questions.some(q => getAnswer(sectionId, q.id).trim());
+  }
+  return requiredQs.every(q => getAnswer(sectionId, q.id).trim());
+}
+
+/**
+ * Renders the sidebar with section list and progress indicators.
+ */
+function renderIntakeSidebar() {
+  const sidebar = document.getElementById('intakeSidebar');
+  if (!sidebar) return;
+  sidebar.innerHTML = '';
+
+  INTAKE_SECTIONS.forEach((section, idx) => {
+    const complete = isSectionComplete(section.id);
+    const active = idx === currentSectionIdx && intakeViewMode === 'flow';
+    const div = document.createElement('div');
+    div.className = 'intake-sidebar-item' + (active ? ' active' : '') + (complete ? ' complete' : '');
+    div.innerHTML = `
+      <div class="intake-sidebar-icon">${complete ? '&#10003;' : section.icon}</div>
+      <div>
+        <div style="font-size:13px;">${escapeHTML(section.title)}</div>
+        ${section.required ? '<div style="font-size:10px;color:var(--ac-text-muted);">Required</div>' : ''}
+      </div>
+    `;
+    div.addEventListener('click', () => {
+      currentSectionIdx = idx;
+      currentQuestionIdx = 0;
+      intakeViewMode = 'flow';
+      renderIntakeFlow();
     });
-
-    // Live-sync: mirror every field change back to qaList[i] immediately
-    // SELECTs fire 'change'; inputs and textareas fire 'input'
-    div.querySelectorAll('input, textarea, select').forEach(el => {
-      const evt = el.tagName === 'SELECT' ? 'change' : 'input';
-      el.addEventListener(evt, () => {
-        qaList[i][el.dataset.field] = el.value;
-      });
-    });
-
-    list.appendChild(div);
+    sidebar.appendChild(div);
   });
 
-  // Friendly empty-state message when a filter yields no results
-  if (visibleCount === 0 && activeQAFilter !== 'all') {
-    list.innerHTML = '<p style="text-align:center;color:#94a3b8;padding:20px;">No questions in this category.</p>';
+  // Review & Finish button at the bottom
+  const reviewBtn = document.createElement('div');
+  reviewBtn.className = 'intake-sidebar-item' + (intakeViewMode === 'review' ? ' active' : '');
+  reviewBtn.innerHTML = `<div class="intake-sidebar-icon">&#128220;</div><div style="font-size:13px;">Review & Finish</div>`;
+  reviewBtn.addEventListener('click', () => {
+    intakeViewMode = 'review';
+    renderIntakeFlow();
+  });
+  sidebar.appendChild(reviewBtn);
+
+  // Update progress bar
+  const stats = getCompletionStats();
+  const fill = document.getElementById('intakeProgressFill');
+  if (fill) fill.style.width = stats.percent + '%';
+}
+
+/**
+ * Main render dispatcher — calls the appropriate renderer based on view mode.
+ */
+function renderIntakeFlow() {
+  renderIntakeSidebar();
+  if (intakeViewMode === 'review') {
+    renderIntakeReview();
+  } else {
+    const section = INTAKE_SECTIONS[currentSectionIdx];
+    if (section.id === 'text-dumps') {
+      renderTextDumpSection();
+    } else {
+      renderIntakeSection();
+    }
   }
 }
 
-// ─── DEFAULT_QA_QUESTIONS categories ─────────────────────────────────────────
-// The US states list is used by the 'State / Province' dropdown option set.
+/**
+ * Renders the current section as a form with all questions visible at once.
+ */
+function renderIntakeSection() {
+  const main = document.getElementById('intakeMain');
+  if (!main) return;
+  const section = INTAKE_SECTIONS[currentSectionIdx];
+
+  let html = `
+    <div class="intake-section-title">${escapeHTML(section.title)}</div>
+    <div class="intake-section-desc">${escapeHTML(section.description)}</div>
+  `;
+
+  section.questions.forEach(q => {
+    const answer = getAnswer(section.id, q.id);
+    const requiredMark = q.required ? ' <span style="color:#dc2626;">*</span>' : '';
+    html += `<div class="intake-question-label">${escapeHTML(q.text)}${requiredMark}</div>`;
+    if (q.hint) html += `<div class="intake-question-hint">${escapeHTML(q.hint)}</div>`;
+
+    if (q.type === 'select') {
+      const optionsHTML = (q.options || []).map(opt =>
+        `<option value="${escapeAttr(opt)}"${answer === opt ? ' selected' : ''}>${escapeHTML(opt || '-- Select --')}</option>`
+      ).join('');
+      html += `<select class="intake-answer-input" data-section="${section.id}" data-question="${q.id}">${optionsHTML}</select>`;
+    } else if (q.type === 'textarea') {
+      html += `<textarea class="intake-answer-input" data-section="${section.id}" data-question="${q.id}" rows="3" placeholder="${escapeAttr(q.hint || 'Your answer...')}">${escapeHTML(answer)}</textarea>`;
+    } else {
+      html += `<input type="text" class="intake-answer-input" data-section="${section.id}" data-question="${q.id}" value="${escapeAttr(answer)}" placeholder="${escapeAttr(q.hint || 'Your answer...')}">`;
+    }
+  });
+
+  // Navigation
+  html += `<div class="intake-nav">`;
+  if (currentSectionIdx > 0) {
+    html += `<button class="btn btn-secondary" id="intakePrevSection">Back</button>`;
+  }
+  html += `<div class="spacer"></div>`;
+  if (currentSectionIdx < INTAKE_SECTIONS.length - 1) {
+    html += `<button class="btn btn-primary" id="intakeNextSection">Next Section</button>`;
+  } else {
+    html += `<button class="btn btn-primary" id="intakeGoReview">Review & Finish</button>`;
+  }
+  html += `</div>`;
+
+  main.innerHTML = html;
+
+  // Wire up live-sync for all inputs
+  main.querySelectorAll('.intake-answer-input').forEach(el => {
+    const evt = el.tagName === 'SELECT' ? 'change' : 'input';
+    el.addEventListener(evt, () => {
+      setAnswer(el.dataset.section, el.dataset.question, el.value);
+      renderIntakeSidebar(); // Update completion indicators
+    });
+  });
+
+  // Navigation buttons
+  const prevBtn = main.querySelector('#intakePrevSection');
+  if (prevBtn) prevBtn.addEventListener('click', () => {
+    currentSectionIdx--;
+    currentQuestionIdx = 0;
+    renderIntakeFlow();
+  });
+
+  const nextBtn = main.querySelector('#intakeNextSection');
+  if (nextBtn) nextBtn.addEventListener('click', () => {
+    currentSectionIdx++;
+    currentQuestionIdx = 0;
+    renderIntakeFlow();
+  });
+
+  const reviewBtn = main.querySelector('#intakeGoReview');
+  if (reviewBtn) reviewBtn.addEventListener('click', () => {
+    intakeViewMode = 'review';
+    renderIntakeFlow();
+  });
+}
 
 /**
- * Abbreviated two-letter codes for all US states and DC.
- * Used as the option values for the "State / Province" dropdown question.
- * @type {string[]}
+ * Renders the Text Dump section with add/remove/edit capabilities.
  */
-const US_STATES = [
-  'AL','AK','AZ','AR','CA','CO','CT','DE','DC','FL','GA','HI','ID','IL','IN',
-  'IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH',
-  'NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT',
-  'VT','VA','WA','WV','WI','WY'
-];
+function renderTextDumpSection() {
+  const main = document.getElementById('intakeMain');
+  if (!main) return;
+  const section = INTAKE_SECTIONS.find(s => s.id === 'text-dumps');
+
+  let html = `
+    <div class="intake-section-title">${escapeHTML(section.title)}</div>
+    <div class="intake-section-desc">${escapeHTML(section.description)}</div>
+    <p style="font-size:12px;color:var(--ac-primary);margin-bottom:16px;">We'll use this text to give better, more personalized answers on your applications.</p>
+  `;
+
+  const dumps = applicantContext.textDumps || [];
+  dumps.forEach((dump, i) => {
+    html += `
+      <div class="text-dump-entry" data-dump-idx="${i}">
+        <div class="text-dump-header">
+          <select class="dump-label-select" data-dump-idx="${i}">
+            ${['Resume', 'LinkedIn About', 'Cover Letter', 'Notes', 'Other'].map(opt =>
+              `<option value="${escapeAttr(opt)}"${dump.label === opt ? ' selected' : ''}>${escapeHTML(opt)}</option>`
+            ).join('')}
+          </select>
+          <button class="btn btn-danger btn-sm remove-dump" data-dump-idx="${i}">&times;</button>
+        </div>
+        <textarea class="intake-answer-input dump-content" data-dump-idx="${i}" rows="6" placeholder="Paste your text here...">${escapeHTML(dump.content || '')}</textarea>
+        <div class="text-dump-char-count">${(dump.content || '').length.toLocaleString()} / ${MAX_TEXT_DUMP_CHARS.toLocaleString()} characters</div>
+      </div>
+    `;
+  });
+
+  if (dumps.length < MAX_TEXT_DUMPS) {
+    html += `<button class="btn btn-secondary btn-sm" id="addTextDumpBtn">+ Add Text Block</button>`;
+  } else {
+    html += `<p style="font-size:12px;color:var(--ac-text-muted);">Maximum ${MAX_TEXT_DUMPS} text blocks reached.</p>`;
+  }
+
+  // Navigation
+  html += `<div class="intake-nav">`;
+  if (currentSectionIdx > 0) {
+    html += `<button class="btn btn-secondary" id="intakePrevSection">Back</button>`;
+  }
+  html += `<div class="spacer"></div>`;
+  html += `<button class="btn btn-primary" id="intakeGoReview">Review & Finish</button>`;
+  html += `</div>`;
+
+  main.innerHTML = html;
+
+  // Wire up label selects
+  main.querySelectorAll('.dump-label-select').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const idx = parseInt(sel.dataset.dumpIdx);
+      applicantContext.textDumps[idx].label = sel.value;
+      scheduleIntakeSave();
+    });
+  });
+
+  // Wire up content textareas
+  main.querySelectorAll('.dump-content').forEach(ta => {
+    ta.addEventListener('input', () => {
+      const idx = parseInt(ta.dataset.dumpIdx);
+      const value = ta.value.substring(0, MAX_TEXT_DUMP_CHARS);
+      applicantContext.textDumps[idx].content = value;
+      ta.closest('.text-dump-entry').querySelector('.text-dump-char-count').textContent =
+        `${value.length.toLocaleString()} / ${MAX_TEXT_DUMP_CHARS.toLocaleString()} characters`;
+      scheduleIntakeSave();
+    });
+  });
+
+  // Wire up remove buttons
+  main.querySelectorAll('.remove-dump').forEach(btn => {
+    btn.addEventListener('click', () => {
+      applicantContext.textDumps.splice(parseInt(btn.dataset.dumpIdx), 1);
+      scheduleIntakeSave();
+      renderTextDumpSection();
+      renderIntakeSidebar();
+    });
+  });
+
+  // Add button
+  const addBtn = main.querySelector('#addTextDumpBtn');
+  if (addBtn) addBtn.addEventListener('click', () => {
+    if (!applicantContext.textDumps) applicantContext.textDumps = [];
+    applicantContext.textDumps.push({ label: 'Resume', content: '', createdAt: new Date().toISOString() });
+    scheduleIntakeSave();
+    renderTextDumpSection();
+    renderIntakeSidebar();
+  });
+
+  // Navigation
+  const prevBtn = main.querySelector('#intakePrevSection');
+  if (prevBtn) prevBtn.addEventListener('click', () => {
+    currentSectionIdx--;
+    renderIntakeFlow();
+  });
+
+  const reviewBtn = main.querySelector('#intakeGoReview');
+  if (reviewBtn) reviewBtn.addEventListener('click', () => {
+    intakeViewMode = 'review';
+    renderIntakeFlow();
+  });
+}
 
 /**
- * Canonical set of Q&A entries representing the most common questions asked on
- * US job applications.  Grouped into labelled categories:
- *
- *   personal      — name, address, contact details, current employer
- *   work-auth     — legal right to work, visa sponsorship, age gate
- *   availability  — start date, notice period, employment type, overtime
- *   salary        — desired salary / hourly rate
- *   background    — background check, drug test, prior employment, non-compete,
- *                   driver's licence
- *   relocation    — willingness to relocate, relocation assistance, work
- *                   arrangement preference, travel percentage
- *   referral      — source of the job lead, employee referral, social/portfolio links
- *   demographics  — voluntary EEO / diversity fields (all "Prefer not to say" friendly)
- *   general       — education level, certifications, clearance, accommodation,
- *                   open-ended cover note
- *
- * Each entry shape: { question, answer, category, type, options? }
- *   type: 'short'    — single-line text input
- *         'dropdown' — <select> with the provided options array
- *         'text'     — multi-line textarea
- *
- * The `answer` field is intentionally empty here; it gets filled in by the user
- * (or pre-populated from profileData during future enhancements).
- *
- * @type {Array<{question: string, answer: string, category: string, type: string, options?: string[]}>}
+ * Renders the Review & Finish screen showing all answers grouped by section.
  */
-const DEFAULT_QA_QUESTIONS = [
-  // ── Personal / Address ──
-  { question: 'First Name', answer: '', category: 'personal', type: 'short' },
-  { question: 'Last Name', answer: '', category: 'personal', type: 'short' },
-  { question: 'Email Address', answer: '', category: 'personal', type: 'short' },
-  { question: 'Phone Number', answer: '', category: 'personal', type: 'short' },
-  { question: 'Street Address', answer: '', category: 'personal', type: 'short' },
-  { question: 'Street Address Line 2 (Apt, Suite, Unit)', answer: '', category: 'personal', type: 'short' },
-  { question: 'City', answer: '', category: 'personal', type: 'short' },
-  // State dropdown: blank sentinel + all 50 states + DC + Other
-  { question: 'State / Province', answer: '', category: 'personal', type: 'dropdown', options: [''].concat(US_STATES, ['Other']) },
-  { question: 'ZIP / Postal Code', answer: '', category: 'personal', type: 'short' },
-  { question: 'Country', answer: '', category: 'personal', type: 'dropdown', options: ['', 'United States', 'Canada', 'United Kingdom', 'India', 'Australia', 'Germany', 'France', 'Mexico', 'Brazil', 'Other'] },
-  { question: 'Current Job Title', answer: '', category: 'personal', type: 'short' },
-  { question: 'Current Employer / Company', answer: '', category: 'personal', type: 'short' },
+function renderIntakeReview() {
+  const main = document.getElementById('intakeMain');
+  if (!main) return;
 
-  // ── Work Authorization ──
-  { question: 'Are you legally authorized to work in the United States?', answer: '', category: 'work-auth', type: 'dropdown', options: ['', 'Yes', 'No'] },
-  { question: 'Will you now or in the future require sponsorship for employment visa status (e.g., H-1B)?', answer: '', category: 'work-auth', type: 'dropdown', options: ['', 'Yes', 'No'] },
-  { question: 'Are you at least 18 years of age?', answer: '', category: 'work-auth', type: 'dropdown', options: ['', 'Yes', 'No'] },
-  { question: 'Work authorization status', answer: '', category: 'work-auth', type: 'dropdown', options: ['', 'U.S. Citizen', 'Green Card Holder', 'H-1B Visa', 'EAD / OPT', 'TN Visa', 'L-1 Visa', 'Other'] },
+  const stats = getCompletionStats();
+  let html = `
+    <div class="intake-section-title">Review Your Context</div>
+    <div class="intake-section-desc">${stats.answered} of ${stats.total} questions answered (${stats.percent}% complete)</div>
+  `;
 
-  // ── Availability ──
-  { question: 'Earliest available start date', answer: '', category: 'availability', type: 'short' },
-  { question: 'Notice period for current employer', answer: '', category: 'availability', type: 'dropdown', options: ['', 'Immediately available', '1 week', '2 weeks', '3 weeks', '1 month', 'More than 1 month'] },
-  { question: 'Desired employment type', answer: '', category: 'availability', type: 'dropdown', options: ['', 'Full-time', 'Part-time', 'Contract', 'Internship', 'Any'] },
-  { question: 'Available to work overtime/weekends if needed?', answer: '', category: 'availability', type: 'dropdown', options: ['', 'Yes', 'No'] },
+  INTAKE_SECTIONS.forEach((section, sIdx) => {
+    if (section.id === 'text-dumps') {
+      // Text dumps review
+      const dumps = applicantContext.textDumps || [];
+      if (dumps.length > 0) {
+        html += `<div class="intake-review-section">`;
+        html += `<h3 data-section-idx="${sIdx}">${escapeHTML(section.icon + ' ' + section.title)} (${dumps.length} block${dumps.length === 1 ? '' : 's'})</h3>`;
+        dumps.forEach(dump => {
+          const preview = (dump.content || '').substring(0, 100).replace(/\n/g, ' ');
+          html += `<div class="intake-review-item">
+            <div class="intake-review-q">${escapeHTML(dump.label)}</div>
+            <div class="intake-review-a">${preview ? escapeHTML(preview) + (dump.content.length > 100 ? '...' : '') : '<span class="empty">Empty</span>'}</div>
+          </div>`;
+        });
+        html += `</div>`;
+      }
+      return;
+    }
 
-  // ── Salary ──
-  { question: 'Desired annual salary (USD)', answer: '', category: 'salary', type: 'short' },
-  { question: 'Desired hourly rate (if applicable)', answer: '', category: 'salary', type: 'short' },
+    const answeredCount = section.questions.filter(q => getAnswer(section.id, q.id).trim()).length;
+    html += `<div class="intake-review-section">`;
+    html += `<h3 data-section-idx="${sIdx}">${escapeHTML(section.icon + ' ' + section.title)} (${answeredCount}/${section.questions.length})</h3>`;
+    section.questions.forEach(q => {
+      const answer = getAnswer(section.id, q.id);
+      html += `<div class="intake-review-item">
+        <div class="intake-review-q">${escapeHTML(q.text)}</div>
+        <div class="intake-review-a${answer.trim() ? '' : ' empty'}">${answer.trim() ? escapeHTML(answer) : 'Not answered'}</div>
+      </div>`;
+    });
+    html += `</div>`;
+  });
 
-  // ── Background ──
-  { question: 'Willing to undergo a background check?', answer: '', category: 'background', type: 'dropdown', options: ['', 'Yes', 'No'] },
-  { question: 'Willing to undergo a drug test?', answer: '', category: 'background', type: 'dropdown', options: ['', 'Yes', 'No'] },
-  { question: 'Previously employed by or applied to this company?', answer: '', category: 'background', type: 'dropdown', options: ['', 'Yes', 'No'] },
-  { question: 'Subject to a non-compete agreement?', answer: '', category: 'background', type: 'dropdown', options: ['', 'Yes', 'No'] },
-  { question: 'Do you have a valid driver\'s license?', answer: '', category: 'background', type: 'dropdown', options: ['', 'Yes', 'No'] },
+  html += `<div style="text-align:center;margin-top:20px;">
+    <button class="btn btn-primary" id="intakeSaveAndFinish">Save Context</button>
+  </div>`;
 
-  // ── Relocation & Commute ──
-  { question: 'Willing to relocate?', answer: '', category: 'relocation', type: 'dropdown', options: ['', 'Yes', 'No', 'Open to discussion'] },
-  { question: 'Require relocation assistance?', answer: '', category: 'relocation', type: 'dropdown', options: ['', 'Yes', 'No'] },
-  { question: 'Preferred work arrangement', answer: '', category: 'relocation', type: 'dropdown', options: ['', 'On-site', 'Hybrid', 'Remote', 'Flexible / Any'] },
-  { question: 'Willingness to travel', answer: '', category: 'relocation', type: 'dropdown', options: ['', 'No travel', 'Up to 25%', 'Up to 50%', 'Up to 75%', '100% / Full-time travel'] },
+  main.innerHTML = html;
 
-  // ── Referral & Links ──
-  { question: 'How did you hear about this position?', answer: '', category: 'referral', type: 'dropdown', options: ['', 'Company Website', 'LinkedIn', 'Indeed', 'Glassdoor', 'Employee Referral', 'Recruiter / Staffing Agency', 'University / Career Fair', 'Google Search', 'Social Media', 'Job Board (other)', 'Other'] },
-  { question: 'Referred by a current employee? Name:', answer: '', category: 'referral', type: 'short' },
-  { question: 'LinkedIn Profile URL', answer: '', category: 'referral', type: 'short' },
-  { question: 'Portfolio / Personal Website URL', answer: '', category: 'referral', type: 'short' },
-  { question: 'GitHub Profile URL', answer: '', category: 'referral', type: 'short' },
+  // Click on section title to jump back and edit
+  main.querySelectorAll('[data-section-idx]').forEach(h3 => {
+    h3.addEventListener('click', () => {
+      currentSectionIdx = parseInt(h3.dataset.sectionIdx);
+      currentQuestionIdx = 0;
+      intakeViewMode = 'flow';
+      renderIntakeFlow();
+    });
+  });
 
-  // ── Demographics / EEO (Voluntary) ──
-  // Clean question names — no examples that could confuse the AI
-  { question: 'Gender', answer: '', category: 'demographics', type: 'dropdown', options: ['', 'Male', 'Female', 'Non-binary', 'Other', 'Prefer not to say'] },
-  { question: 'Gender identity', answer: '', category: 'demographics', type: 'dropdown', options: ['', 'Man', 'Woman', 'Non-binary', 'Genderqueer / Genderfluid', 'Agender', 'Two-Spirit', 'Other', 'Prefer not to say'] },
-  { question: 'Sexual orientation', answer: '', category: 'demographics', type: 'dropdown', options: ['', 'Straight / Heterosexual', 'Gay or Lesbian', 'Bisexual', 'Pansexual', 'Asexual', 'Queer', 'Other', 'Prefer not to say'] },
-  { question: 'Pronouns', answer: '', category: 'demographics', type: 'dropdown', options: ['', 'He/Him', 'She/Her', 'They/Them', 'He/They', 'She/They', 'Other', 'Prefer not to say'] },
-  { question: 'Race / Ethnicity', answer: '', category: 'demographics', type: 'dropdown', options: ['', 'American Indian or Alaska Native', 'Asian', 'Black or African American', 'Hispanic or Latino', 'Native Hawaiian or Pacific Islander', 'White', 'Two or more races', 'Other', 'Prefer not to say'] },
-  { question: 'Are you Hispanic or Latino?', answer: '', category: 'demographics', type: 'dropdown', options: ['', 'Yes', 'No', 'Decline to self-identify'] },
-  { question: 'Veteran status', answer: '', category: 'demographics', type: 'dropdown', options: ['', 'I am not a protected veteran', 'I identify as one or more of the classifications of a protected veteran', 'I am a disabled veteran', 'Decline to self-identify'] },
-  { question: 'Disability status', answer: '', category: 'demographics', type: 'dropdown', options: ['', 'Yes, I have a disability (or previously had a disability)', 'No, I do not have a disability', 'I do not want to answer'] },
+  // Save button
+  main.querySelector('#intakeSaveAndFinish').addEventListener('click', async () => {
+    try {
+      applicantContext.completedAt = new Date().toISOString();
+      await sendMessage({ type: 'SAVE_APPLICANT_CONTEXT', applicantContext });
+      showToast('Applicant context saved!');
+    } catch (err) {
+      showToast('Error saving: ' + err.message);
+    }
+  });
+}
 
-  // ── General ──
-  { question: 'Highest level of education completed', answer: '', category: 'general', type: 'dropdown', options: ['', 'Less than High School', 'High School Diploma / GED', 'Some College (no degree)', "Associate's Degree", "Bachelor's Degree (BA/BS)", "Master's Degree (MA/MS/MBA)", 'Doctorate (PhD/EdD)', 'Professional Degree (JD/MD/DDS)', 'Prefer not to say'] },
-  { question: 'Relevant certifications or professional licenses', answer: '', category: 'general', type: 'short' },
-  { question: 'Security clearance', answer: '', category: 'general', type: 'dropdown', options: ['', 'None', 'Confidential', 'Secret', 'Top Secret', 'TS/SCI', 'Eligible but do not currently hold', 'Not applicable'] },
-  { question: 'Able to perform essential functions of the job with or without accommodation?', answer: '', category: 'general', type: 'dropdown', options: ['', 'Yes', 'No'] },
-  { question: 'Is there anything else you would like us to know?', answer: '', category: 'general', type: 'text' },
-];
+// ─── Q&A migration (old qaList → new applicantContext) ──────────────────────
 
 /**
- * The currently active Q&A category filter.
- * 'all' shows every entry; any other value is a category slug matched against
- * each entry's `category` field during renderQA().
- * @type {string}
+ * Maps from old Q&A question text to new intake section/question IDs.
+ * Used for one-time migration of existing qaList data.
  */
-let activeQAFilter = 'all';
+const QA_MIGRATION_MAP = {
+  'First Name': ['personal-details', 'first_name'],
+  'Last Name': ['personal-details', 'last_name'],
+  'Email Address': ['personal-details', 'email'],
+  'Phone Number': ['personal-details', 'phone'],
+  'Street Address': ['personal-details', 'street_address'],
+  'Street Address Line 2 (Apt, Suite, Unit)': ['personal-details', 'address_line_2'],
+  'City': ['personal-details', 'city'],
+  'State / Province': ['personal-details', 'state'],
+  'ZIP / Postal Code': ['personal-details', 'zip_code'],
+  'Country': ['personal-details', 'country'],
+  'Current Job Title': ['personal-details', 'current_title'],
+  'Current Employer / Company': ['personal-details', 'current_employer'],
+  'Are you legally authorized to work in the United States?': ['work-preferences', 'work_auth'],
+  'Will you now or in the future require sponsorship for employment visa status (e.g., H-1B)?': ['work-preferences', 'sponsorship'],
+  'Are you at least 18 years of age?': ['personal-details', 'age_18'],
+  'Work authorization status': ['work-preferences', 'auth_status'],
+  'Earliest available start date': ['work-preferences', 'start_date'],
+  'Notice period for current employer': ['work-preferences', 'notice_period'],
+  'Desired employment type': ['work-preferences', 'employment_type'],
+  'Desired annual salary (USD)': ['work-preferences', 'desired_salary'],
+  'Desired hourly rate (if applicable)': ['work-preferences', 'hourly_rate'],
+  'Willing to undergo a background check?': ['work-preferences', 'background_check'],
+  'Willing to undergo a drug test?': ['work-preferences', 'drug_test'],
+  "Do you have a valid driver's license?": ['work-preferences', 'drivers_license'],
+  'Willing to relocate?': ['work-preferences', 'willing_relocate'],
+  'Preferred work arrangement': ['work-preferences', 'work_arrangement'],
+  'Willingness to travel': ['work-preferences', 'travel_willingness'],
+  'Security clearance': ['work-preferences', 'security_clearance'],
+  'How did you hear about this position?': ['personal-details', 'how_heard'],
+  'LinkedIn Profile URL': ['personal-details', 'linkedin_url'],
+  'Portfolio / Personal Website URL': ['personal-details', 'portfolio_url'],
+  'GitHub Profile URL': ['personal-details', 'github_url'],
+  'Gender': ['personal-details', 'gender'],
+  'Gender identity': ['personal-details', 'gender_identity'],
+  'Sexual orientation': ['personal-details', 'sexual_orientation'],
+  'Pronouns': ['personal-details', 'pronouns'],
+  'Race / Ethnicity': ['personal-details', 'race_ethnicity'],
+  'Are you Hispanic or Latino?': ['personal-details', 'hispanic_latino'],
+  'Veteran status': ['personal-details', 'veteran_status'],
+  'Disability status': ['personal-details', 'disability_status'],
+  'Highest level of education completed': ['education', 'highest_education'],
+  'Relevant certifications or professional licenses': ['education', 'certifications'],
+  'Able to perform essential functions of the job with or without accommodation?': ['personal-details', 'accommodation'],
+  'Is there anything else you would like us to know?': ['personal-details', 'anything_else'],
+};
 
 /**
- * "Load Common Questions" button handler.
- * Deduplicates against the current qaList (by lowercased question text) so
- * running the button multiple times is safe.  After loading, shows the
- * category filter toolbar and hides the button itself.
+ * Migrates old qaList data into the new applicantContext format.
+ * Only runs once — when applicantContext is empty but qaList has data.
  */
-document.getElementById('loadDefaultQABtn').addEventListener('click', () => {
-  // Build a set of already-present question strings to avoid duplicates
-  const existingQuestions = new Set(qaList.map(q => q.question.toLowerCase().trim()));
-  let added = 0;
-  for (const dq of DEFAULT_QA_QUESTIONS) {
-    if (!existingQuestions.has(dq.question.toLowerCase().trim())) {
-      // Spread to avoid sharing option array references with the DEFAULT constant
-      qaList.push({ ...dq });
-      added++;
+function migrateFromQAList(oldQAList) {
+  if (!oldQAList || !oldQAList.length) return false;
+
+  let migrated = 0;
+  for (const qa of oldQAList) {
+    if (!qa.answer || !qa.answer.trim()) continue;
+    const mapping = QA_MIGRATION_MAP[qa.question];
+    if (mapping) {
+      const [sectionId, questionId] = mapping;
+      if (!applicantContext.sections[sectionId]) applicantContext.sections[sectionId] = {};
+      applicantContext.sections[sectionId][questionId] = qa.answer;
+      migrated++;
     }
   }
-  if (added === 0) {
-    showToast('All common questions already loaded.');
-  } else {
-    showToast(`Added ${added} common questions. Fill in your answers and save.`);
-  }
-  renderQA();
-  // Reveal the category filter now that we have categorised entries
-  document.getElementById('qaCategoryFilter').style.display = 'block';
-  // The button is no longer needed once the defaults are loaded
-  document.getElementById('loadDefaultQABtn').style.display = 'none';
-});
 
-/**
- * Category filter button handler.
- * Marks the clicked button as active, updates `activeQAFilter`, and re-renders.
- */
-document.querySelectorAll('.qa-filter-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    // Deactivate all filter buttons, then activate the clicked one
-    document.querySelectorAll('.qa-filter-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    activeQAFilter = btn.dataset.cat;
-    renderQA();
-  });
-});
-
-/**
- * "Add Custom Q&A" button handler.
- * Appends a blank custom entry (category = 'custom') to the list and re-renders.
- */
-document.getElementById('addQABtn').addEventListener('click', () => {
-  if (qaList.length >= 200) {
-    showToast('Q&A list is limited to 200 entries. Please remove some before adding new ones.');
-    return;
-  }
-  qaList.push({ question: '', answer: '', category: 'custom' });
-  renderQA();
-});
-
-/**
- * "Save Q&A" button handler.
- * Persists the current qaList via the background service worker.
- */
-document.getElementById('saveQABtn').addEventListener('click', async () => {
-  try {
-    await sendMessage({ type: 'SAVE_QA_LIST', qaList });
-    showToast('Q&A answers saved!');
-  } catch (err) {
-    showToast('Error: ' + err.message);
-  }
-});
+  return migrated > 0;
+}
 
 // ─── AI settings ──────────────────────────────────────────────────────────────
 
@@ -1105,52 +1387,140 @@ async function saveSettings() {
   await sendMessage({ type: 'SAVE_SETTINGS', settings });
 }
 
-// ─── Q&A migration ────────────────────────────────────────────────────────────
+// ─── Pre-fill intake from profile data ───────────────────────────────────────
 
 /**
- * Upgrades stored Q&A entries so that their `type` and `options` fields match
- * the current DEFAULT_QA_QUESTIONS definitions.
- *
- * This is needed when defaults are updated after a user has already saved their
- * answers — for example, when a question's type is changed from 'text' to
- * 'dropdown' or new options are added to an existing dropdown.
- *
- * Migration rules (per stored entry):
- *   1. Look up the entry by its exact question text in the defaults map.
- *   2. If no match, leave the entry unchanged (it is user-custom).
- *   3. If the stored type differs from the default type, OR the stored entry is
- *      a dropdown but is missing its options array, copy `type` and `options`
- *      from the default.  The user's answer is always preserved.
- *   4. If anything changed, silently re-save the full list to storage so the
- *      migration is only applied once.
- *
- * @param {Array} stored - The raw qaList loaded from chrome.storage.
- * @returns {Array} The (possibly updated) list; safe to assign directly to `qaList`.
+ * Seeds the intake flow's Personal Details and Education sections from parsed
+ * resume profile data. Only fills in fields that are currently empty, so it
+ * never overwrites user-entered answers.
  */
-function migrateQAList(stored) {
-  // Index the defaults by question text for O(1) lookup
-  const defaultsByQuestion = {};
-  DEFAULT_QA_QUESTIONS.forEach(d => { defaultsByQuestion[d.question] = d; });
-
+function prefillFromProfile(profile) {
+  if (!profile) return;
   let changed = false;
-  const migrated = stored.map(item => {
-    const def = defaultsByQuestion[item.question];
-    // User-custom entry (no matching default) — pass through unchanged
-    if (!def) return item;
-    // Migrate if type changed or if options are missing on a dropdown entry
-    if (item.type !== def.type || (def.type === 'dropdown' && !item.options)) {
-      changed = true;
-      // Spread to preserve the user's answer while overwriting structural fields
-      return { ...item, type: def.type, options: def.options };
-    }
-    return item;
-  });
 
-  // Persist the migrated list if anything changed, so future loads are already clean
-  if (changed) {
-    sendMessage({ type: 'SAVE_QA_LIST', qaList: migrated }).catch(() => {});
+  function fillIfEmpty(sectionId, questionId, value) {
+    if (!value || !value.toString().trim()) return;
+    if (getAnswer(sectionId, questionId).trim()) return; // Don't overwrite
+    if (!applicantContext.sections[sectionId]) applicantContext.sections[sectionId] = {};
+    applicantContext.sections[sectionId][questionId] = value.toString().trim();
+    changed = true;
   }
-  return migrated;
+
+  // Personal details from profile form
+  const nameParts = (profile.name || '').trim().split(/\s+/);
+  if (nameParts.length >= 2) {
+    fillIfEmpty('personal-details', 'first_name', nameParts[0]);
+    fillIfEmpty('personal-details', 'last_name', nameParts.slice(1).join(' '));
+  } else if (nameParts.length === 1) {
+    fillIfEmpty('personal-details', 'first_name', nameParts[0]);
+  }
+  fillIfEmpty('personal-details', 'email', profile.email);
+  fillIfEmpty('personal-details', 'phone', profile.phone);
+  fillIfEmpty('personal-details', 'city', profile.location);
+  fillIfEmpty('personal-details', 'linkedin_url', profile.linkedin);
+  fillIfEmpty('personal-details', 'portfolio_url', profile.website);
+
+  // Professional summary
+  fillIfEmpty('professional-summary', 'elevator_pitch', profile.summary);
+
+  // Skills
+  if (profile.skills?.length) {
+    fillIfEmpty('professional-summary', 'top_skills', profile.skills.slice(0, 10).join(', '));
+    fillIfEmpty('experience-highlights', 'daily_tools', profile.skills.join(', '));
+  }
+
+  // Experience highlights from most recent role
+  if (profile.experience?.length) {
+    const recent = profile.experience[0];
+    const roleDesc = [recent.title, recent.company].filter(Boolean).join(' at ');
+    const fullDesc = roleDesc + (recent.description ? '\n' + recent.description : '');
+    fillIfEmpty('experience-highlights', 'recent_role', fullDesc);
+    fillIfEmpty('personal-details', 'current_title', recent.title);
+    fillIfEmpty('personal-details', 'current_employer', recent.company);
+  }
+
+  // Education
+  if (profile.education?.length) {
+    const edu = profile.education[0];
+    fillIfEmpty('education', 'field_of_study', edu.degree);
+    fillIfEmpty('education', 'school_name', edu.school);
+  }
+
+  // Certifications
+  if (profile.certifications?.length) {
+    fillIfEmpty('education', 'certifications', profile.certifications.join(', '));
+  }
+
+  if (changed) {
+    scheduleIntakeSave();
+  }
+}
+
+// ─── Build Q&A-compatible list from applicantContext ─────────────────────────
+// This backward-compat layer converts the new intake context back to the old
+// { question, answer } array format that deterministicMatcher.js and
+// aiService.js prompt builders expect.
+
+/**
+ * Converts applicantContext into the old qaList format for backward compatibility.
+ * @returns {Array<{question: string, answer: string}>}
+ */
+function buildQAListFromContext() {
+  const qaList = [];
+
+  // Reverse the migration map: [sectionId, questionId] → question text
+  const reverseMap = {};
+  for (const [questionText, [sectionId, questionId]] of Object.entries(QA_MIGRATION_MAP)) {
+    reverseMap[`${sectionId}.${questionId}`] = questionText;
+  }
+
+  for (const section of INTAKE_SECTIONS) {
+    if (section.id === 'text-dumps') continue;
+    for (const q of section.questions) {
+      const answer = getAnswer(section.id, q.id);
+      if (!answer.trim()) continue;
+      // Use the old Q&A question text if we have a mapping, otherwise use the intake question text
+      const questionText = reverseMap[`${section.id}.${q.id}`] || q.text;
+      qaList.push({ question: questionText, answer });
+    }
+  }
+  return qaList;
+}
+
+/**
+ * Builds a rich context string for AI prompts from applicantContext.
+ * This is richer than the old Q&A format — includes career goals, experience
+ * highlights, text dumps, and more structured context.
+ */
+function buildContextForPrompt() {
+  let parts = [];
+
+  for (const section of INTAKE_SECTIONS) {
+    if (section.id === 'text-dumps') continue;
+    const sectionAnswers = [];
+    for (const q of section.questions) {
+      const answer = getAnswer(section.id, q.id);
+      if (answer.trim()) {
+        sectionAnswers.push(`${q.text}: ${answer}`);
+      }
+    }
+    if (sectionAnswers.length > 0) {
+      parts.push(`=== ${section.title} ===\n${sectionAnswers.join('\n')}`);
+    }
+  }
+
+  // Include text dumps (truncated to keep prompt manageable)
+  const dumps = applicantContext.textDumps || [];
+  if (dumps.length > 0) {
+    const dumpTexts = dumps
+      .filter(d => d.content?.trim())
+      .map(d => `--- ${d.label} ---\n${d.content.substring(0, 5000)}`);
+    if (dumpTexts.length > 0) {
+      parts.push(`=== Additional Context ===\n${dumpTexts.join('\n\n')}`);
+    }
+  }
+
+  return parts.join('\n\n');
 }
 
 // ─── Initialisation ───────────────────────────────────────────────────────────
@@ -1170,10 +1540,11 @@ function migrateQAList(stored) {
  */
 async function init() {
   try {
-    // Fan out all four background requests simultaneously for fastest page load
-    const [profile, qa, settings, providers] = await Promise.all([
+    // Fan out all background requests simultaneously for fastest page load
+    const [profile, contextData, qa, settings, providers] = await Promise.all([
       sendMessage({ type: 'GET_PROFILE'   }),
-      sendMessage({ type: 'GET_QA_LIST'   }),
+      sendMessage({ type: 'GET_APPLICANT_CONTEXT' }).catch(() => null),
+      sendMessage({ type: 'GET_QA_LIST'   }).catch(() => []),
       sendMessage({ type: 'GET_SETTINGS'  }),
       sendMessage({ type: 'GET_PROVIDERS' })
     ]);
@@ -1192,10 +1563,21 @@ async function init() {
       showResumeLoaded(displayName);
     }
 
-    if (qa && qa.length) {
-      // Run migration before displaying — fixes any stale type/options from old saves
-      qaList = migrateQAList(qa);
-      renderQA();
+    // Load applicant context (new intake flow) or migrate from old qaList
+    if (contextData && Object.keys(contextData.sections || {}).length > 0) {
+      applicantContext = contextData;
+    } else if (qa && qa.length) {
+      // One-time migration from old Q&A format
+      qaList = qa;
+      if (migrateFromQAList(qa)) {
+        sendMessage({ type: 'SAVE_APPLICANT_CONTEXT', applicantContext }).catch(() => {});
+        showToast('Imported your existing Q&A answers into the new intake flow.');
+      }
+    }
+
+    // Pre-fill intake personal details from profile data if intake is empty
+    if (profile && !applicantContext.sections?.['personal-details']?.first_name) {
+      prefillFromProfile(profile);
     }
 
     if (settings) {
@@ -1215,8 +1597,10 @@ async function init() {
     // Load multi-slot state (activeSlot, profileSlots, slotNames) from local storage
     await loadProfileSlots();
   } catch (err) {
-    // Silently swallow init errors — the UI degrades gracefully to empty state
+    console.error('[init] Error during initialization:', err);
   }
+  // Always render the intake flow, even if data loading failed
+  renderIntakeFlow();
 }
 
 // ─── HTML escaping utilities ──────────────────────────────────────────────────
