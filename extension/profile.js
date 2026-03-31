@@ -1257,6 +1257,127 @@ sTemp.addEventListener('input', () => {
   tempValue.textContent = sTemp.value;
 });
 
+/** Updates the display text for a token budget slider (tokens + approx words). */
+function updateBudgetDisplay(sliderId) {
+  const slider = document.getElementById(sliderId);
+  const valMap = {
+    sBudgetResume: 'sBudgetResumeVal',
+    sBudgetAnalysis: 'sBudgetAnalysisVal',
+    sBudgetCoverLetter: 'sBudgetCoverLetterVal',
+    sBudgetChat: 'sBudgetChatVal',
+  };
+  const display = document.getElementById(valMap[sliderId]);
+  if (slider && display) {
+    const tokens = parseInt(slider.value, 10);
+    const words = Math.round(tokens * 0.75);
+    display.textContent = `${tokens} tokens (~${words} words)`;
+  }
+}
+
+// Token budget sliders — update display on drag
+['sBudgetResume', 'sBudgetAnalysis', 'sBudgetCoverLetter', 'sBudgetChat'].forEach(id => {
+  const slider = document.getElementById(id);
+  if (slider) {
+    slider.addEventListener('input', () => updateBudgetDisplay(id));
+  }
+});
+
+// ─── System Prompt Editor ─────────────────────────────────────────────────────
+
+/** State: current prompts, defaults, and metadata loaded from background.js */
+let _promptData = null;
+
+/**
+ * Renders all prompt section editors into #promptSections.
+ * Each section is collapsible with a textarea, modified badge, and reset button.
+ */
+function renderPromptSections(data) {
+  _promptData = data;
+  const container = document.getElementById('promptSections');
+  if (!container) return;
+  container.innerHTML = '';
+
+  const order = ['resume', 'coverLetter', 'chat', 'analysis', 'autofill', 'resumeParse', 'jdDigest', 'edgeSystem'];
+
+  for (const key of order) {
+    const label = data.labels[key] || key;
+    const desc = data.descriptions[key] || '';
+    const current = data.prompts[key] || '';
+    const isDefault = current === data.defaults[key];
+
+    const section = document.createElement('div');
+    section.className = 'prompt-section';
+    section.dataset.key = key;
+    section.innerHTML = `
+      <div class="prompt-section-header">
+        <span class="prompt-section-arrow">&#9654;</span>
+        <span class="prompt-section-name">${label}</span>
+        <span class="prompt-section-badge ${isDefault ? '' : 'visible'}">Modified</span>
+      </div>
+      <div class="prompt-section-body">
+        <div class="prompt-section-desc">${desc}</div>
+        <textarea class="prompt-textarea" data-prompt-key="${key}">${escapeHTML(current)}</textarea>
+        <div class="prompt-section-footer">
+          <button class="prompt-reset-btn" data-reset-key="${key}">Reset to default</button>
+        </div>
+      </div>`;
+
+    // Toggle collapse on header click
+    section.querySelector('.prompt-section-header').addEventListener('click', () => {
+      section.classList.toggle('open');
+    });
+
+    // Reset button
+    section.querySelector('.prompt-reset-btn').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const textarea = section.querySelector('.prompt-textarea');
+      const result = await sendMessage({ type: 'RESET_PROMPT', key });
+      if (result?.defaultValue) {
+        textarea.value = result.defaultValue;
+        data.prompts[key] = result.defaultValue;
+        section.querySelector('.prompt-section-badge').classList.remove('visible');
+        showToast('Prompt reset to default');
+      }
+    });
+
+    // Track modifications on input
+    section.querySelector('.prompt-textarea').addEventListener('input', (e) => {
+      const badge = section.querySelector('.prompt-section-badge');
+      const modified = e.target.value !== data.defaults[key];
+      badge.classList.toggle('visible', modified);
+    });
+
+    container.appendChild(section);
+  }
+}
+
+/** Collects all prompt textarea values and saves them. */
+async function saveCustomPrompts() {
+  const prompts = {};
+  document.querySelectorAll('.prompt-textarea').forEach(textarea => {
+    const key = textarea.dataset.promptKey;
+    if (key) prompts[key] = textarea.value;
+  });
+  await sendMessage({ type: 'SAVE_CUSTOM_PROMPTS', prompts });
+}
+
+/** Simple HTML escaper for populating textareas safely. */
+function escapeHTML(str) {
+  const el = document.createElement('div');
+  el.textContent = str;
+  return el.innerHTML;
+}
+
+// Reset All Prompts button
+document.getElementById('resetAllPromptsBtn')?.addEventListener('click', async () => {
+  if (!confirm('Reset all system prompts to defaults?')) return;
+  await chrome.storage.local.remove('customPrompts');
+  // Reload prompt sections from defaults
+  const data = await sendMessage({ type: 'GET_CUSTOM_PROMPTS' });
+  renderPromptSections(data);
+  showToast('All prompts reset to defaults');
+});
+
 // ─── Provider UI ──────────────────────────────────────────────────────────────
 
 /**
@@ -1369,7 +1490,8 @@ document.getElementById('testConnBtn').addEventListener('click', async () => {
 /** "Save Settings" button — delegates to saveSettings() then shows a toast. */
 document.getElementById('saveSettingsBtn').addEventListener('click', async () => {
   await saveSettings();
-  showToast('Settings saved!');
+  await saveCustomPrompts();
+  showToast('Settings & prompts saved!');
 });
 
 /**
@@ -1382,7 +1504,13 @@ async function saveSettings() {
     provider:    document.getElementById('sProvider').value,
     apiKey:      document.getElementById('sApiKey').value.trim(),
     model:       document.getElementById('sModel').value,
-    temperature: parseFloat(document.getElementById('sTemp').value)
+    temperature: parseFloat(document.getElementById('sTemp').value),
+    tokenBudgets: {
+      resume:      parseInt(document.getElementById('sBudgetResume').value, 10),
+      analysis:    parseInt(document.getElementById('sBudgetAnalysis').value, 10),
+      coverLetter: parseInt(document.getElementById('sBudgetCoverLetter').value, 10),
+      chat:        parseInt(document.getElementById('sBudgetChat').value, 10),
+    }
   };
   await sendMessage({ type: 'SAVE_SETTINGS', settings });
 }
@@ -1541,12 +1669,13 @@ function buildContextForPrompt() {
 async function init() {
   try {
     // Fan out all background requests simultaneously for fastest page load
-    const [profile, contextData, qa, settings, providers] = await Promise.all([
+    const [profile, contextData, qa, settings, providers, promptData] = await Promise.all([
       sendMessage({ type: 'GET_PROFILE'   }),
       sendMessage({ type: 'GET_APPLICANT_CONTEXT' }).catch(() => null),
       sendMessage({ type: 'GET_QA_LIST'   }).catch(() => []),
       sendMessage({ type: 'GET_SETTINGS'  }),
-      sendMessage({ type: 'GET_PROVIDERS' })
+      sendMessage({ type: 'GET_PROVIDERS' }),
+      sendMessage({ type: 'GET_CUSTOM_PROMPTS' }).catch(() => null)
     ]);
 
     // Populate provider dropdown from the registry (single source of truth for providers)
@@ -1590,6 +1719,23 @@ async function init() {
       // Nullish coalescing: treat null/undefined as 0.3, but allow stored 0
       document.getElementById('sTemp').value    = settings.temperature ?? 0.3;
       tempValue.textContent                      = settings.temperature ?? 0.3;
+
+      // Token budget sliders — populate from saved settings or defaults
+      const budgets = settings.tokenBudgets || {};
+      const budgetDefaults = { resume: 8192, analysis: 4096, coverLetter: 2048, chat: 1024 };
+      for (const [key, defaultVal] of Object.entries(budgetDefaults)) {
+        const idMap = { resume: 'sBudgetResume', analysis: 'sBudgetAnalysis', coverLetter: 'sBudgetCoverLetter', chat: 'sBudgetChat' };
+        const slider = document.getElementById(idMap[key]);
+        if (slider) {
+          slider.value = budgets[key] || defaultVal;
+          updateBudgetDisplay(idMap[key]);
+        }
+      }
+    }
+
+    // Render system prompt editors
+    if (promptData) {
+      renderPromptSections(promptData);
     }
 
     // Pre-load applied jobs so the Applied tab is ready before the user clicks it

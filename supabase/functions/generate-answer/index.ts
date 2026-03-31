@@ -2,6 +2,7 @@
 //
 // LLM proxy Edge Function for Applicant Copilot.
 // Accepts a question + context, calls Gemini Flash (free tier), logs usage, returns answer.
+// Supports server-side response caching via jd_cache table.
 // Model-agnostic design — swap to Claude or other providers by changing the provider config.
 //
 // Deno runtime — uses Deno.serve(), Web Fetch API, and Supabase client.
@@ -30,6 +31,8 @@ interface RequestBody {
     }>;
   };
   application_id?: string;
+  action_type?: string;
+  cache_key?: string;  // Optional: jd_hash for cache lookup
   max_tokens?: number;
 }
 
@@ -49,15 +52,29 @@ interface GeminiResponse {
 
 // --- Constants ---
 
+// --- LLM Provider config ---
+// Primary: Groq (Llama 3.3 70B — free tier, 6000 req/day, very fast)
+// Fallback: Gemini Flash (free tier, lower quota)
+const GROQ_MODEL = "llama-3.3-70b-versatile";
 const GEMINI_MODEL = "gemini-2.0-flash";
 const MAX_TOKENS_DEFAULT = 1024;
 
-// Gemini Flash is free tier — $0 cost. Log tokens for future billing when we upgrade.
 const COST_PER_INPUT_TOKEN = 0;
 const COST_PER_OUTPUT_TOKEN = 0;
 
 // Rate limit: tracked per user via usage_logs count in the last hour
 const MAX_REQUESTS_PER_HOUR = 50;
+
+// Valid action types for usage logging
+const VALID_ACTION_TYPES = new Set([
+  "answer_generation",
+  "cover_letter",
+  "resume",
+  "chat",
+  "classification",
+  "resume_generation",
+  "jd_digest",
+]);
 
 // --- CORS headers ---
 
@@ -87,7 +104,14 @@ function buildSystemPrompt(
   jdCompany?: string,
   jdRole?: string,
   jdText?: string,
+  maxTokens?: number,
 ): string {
+  // For long-form generations (resume, cover letter) don't impose word limits
+  const isLongForm = maxTokens && maxTokens > 2048;
+  const lengthGuideline = isLongForm
+    ? `- Be thorough and detailed — include all relevant information. Do NOT artificially shorten or summarize.`
+    : `- Keep answers concise (100-200 words) unless the question clearly requires more`;
+
   let prompt =
     `You are an expert career coach and application assistant for a job applicant. Your role is to help craft authentic, tailored answers to job application questions.
 
@@ -96,7 +120,7 @@ IMPORTANT GUIDELINES:
 - Reference specific experiences and achievements from the applicant's profile
 - Tailor the answer to the specific job and company
 - Be professional but authentic — avoid generic corporate speak
-- Keep answers concise (100-200 words) unless the question clearly requires more
+${lengthGuideline}
 - Never fabricate experiences or skills not in the profile
 - If the profile lacks relevant experience for the question, acknowledge it honestly and pivot to transferable skills
 - Respond with ONLY the answer text. No preamble, no "Here's a draft", no quotes around the answer.`;
@@ -146,6 +170,65 @@ function calculateCost(
     cost_usd: Math.round(cost_usd * 1_000_000) / 1_000_000,
     billed_usd: Math.round(billed_usd * 1_000_000) / 1_000_000,
   };
+}
+
+// --- Helper: SHA-256 hash for cache keys ---
+
+async function sha256(text: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(text.trim().toLowerCase());
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// --- Helper: Check jd_cache for a cached response ---
+
+async function checkCache(
+  serviceClient: ReturnType<typeof createClient>,
+  profileId: string,
+  jdHash: string,
+  operation: string,
+): Promise<{ result: unknown } | null> {
+  const { data, error } = await serviceClient
+    .from("jd_cache")
+    .select("result")
+    .eq("profile_id", profileId)
+    .eq("jd_hash", jdHash)
+    .eq("operation", operation)
+    .gt("expires_at", new Date().toISOString())
+    .single();
+
+  if (error || !data) return null;
+  return data;
+}
+
+// --- Helper: Write to jd_cache ---
+
+async function writeCache(
+  serviceClient: ReturnType<typeof createClient>,
+  profileId: string,
+  jdHash: string,
+  operation: string,
+  result: unknown,
+): Promise<void> {
+  const { error } = await serviceClient
+    .from("jd_cache")
+    .upsert(
+      {
+        profile_id: profileId,
+        jd_hash: jdHash,
+        operation,
+        result,
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+          .toISOString(),
+      },
+      { onConflict: "profile_id,jd_hash,operation" },
+    );
+
+  if (error) {
+    console.error("Cache write failed:", error);
+  }
 }
 
 // --- Service client (initialized once per cold start) ---
@@ -277,20 +360,75 @@ Deno.serve(async (req: Request) => {
 
     const maxTokens = Math.min(
       body.max_tokens || MAX_TOKENS_DEFAULT,
-      4096,
+      16384,
     );
 
-    // -- Build prompt and call Gemini --
+    // Determine action type for logging
+    const actionType = body.action_type && VALID_ACTION_TYPES.has(body.action_type)
+      ? body.action_type
+      : "answer_generation";
+
+    // -- Server-side cache check --
+    // If cache_key is provided (jd_hash), check jd_cache before calling Gemini
+    let jdHash: string | null = null;
+    if (body.cache_key) {
+      jdHash = body.cache_key;
+    } else if (body.jd_text && body.jd_text.length > 50) {
+      // Auto-generate hash from JD text for cacheable operations
+      jdHash = await sha256(body.jd_text);
+    }
+
+    if (jdHash && actionType !== "answer_generation" && actionType !== "chat") {
+      const cached = await checkCache(
+        serviceClient,
+        user.id,
+        jdHash,
+        actionType,
+      );
+      if (cached) {
+        // Cache hit — return immediately without calling Gemini
+        return new Response(
+          JSON.stringify({
+            answer: typeof cached.result === "string"
+              ? cached.result
+              : JSON.stringify(cached.result),
+            model: GEMINI_MODEL,
+            usage: {
+              input_tokens: 0,
+              output_tokens: 0,
+              cost_usd: 0,
+              billed_usd: 0,
+            },
+            cached: true,
+          }),
+          {
+            status: 200,
+            headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          },
+        );
+      }
+    }
+
+    // -- Build prompt --
     const systemPrompt = buildSystemPrompt(
       body.user_profile,
       body.jd_company,
       body.jd_role,
       body.jd_text,
+      maxTokens,
     );
 
+    // -- Call LLM: Groq (primary) → Gemini (fallback) --
+    let answerText = "";
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let modelUsed = "";
+
+    const groqApiKey = Deno.env.get("GROQ_API_KEY");
     const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
-    if (!geminiApiKey) {
-      console.error("GEMINI_API_KEY not configured");
+
+    if (!groqApiKey && !geminiApiKey) {
+      console.error("No LLM API keys configured (GROQ_API_KEY or GEMINI_API_KEY)");
       return new Response(
         JSON.stringify({ error: "Server configuration error" }),
         {
@@ -300,78 +438,116 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const geminiUrl =
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiApiKey}`;
+    // --- Try Groq first (Llama 3.3 70B, free tier, 6000 req/day) ---
+    let llmSuccess = false;
 
-    const geminiResponse = await fetch(geminiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: {
-          parts: [{ text: systemPrompt }],
-        },
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: body.question }],
+    if (groqApiKey) {
+      try {
+        const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${groqApiKey}`,
+            "Content-Type": "application/json",
           },
-        ],
-        generationConfig: {
-          maxOutputTokens: maxTokens,
-          temperature: 0.3,
-          responseMimeType: "text/plain",
-        },
-      }),
-    });
-
-    if (!geminiResponse.ok) {
-      const errorBody = await geminiResponse.text();
-      console.error(
-        `Gemini API error: ${geminiResponse.status}`,
-        errorBody,
-      );
-
-      if (geminiResponse.status === 429) {
-        return new Response(
-          JSON.stringify({
-            error: "AI provider rate limited. Try again in a moment.",
+          body: JSON.stringify({
+            model: GROQ_MODEL,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: body.question },
+            ],
+            max_tokens: maxTokens,
+            temperature: 0.3,
           }),
-          {
-            status: 429,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+
+        if (groqResponse.ok) {
+          const groqResult = await groqResponse.json();
+          const choice = groqResult.choices?.[0];
+          if (choice?.message?.content) {
+            answerText = choice.message.content;
+            inputTokens = groqResult.usage?.prompt_tokens || 0;
+            outputTokens = groqResult.usage?.completion_tokens || 0;
+            modelUsed = groqResult.model || GROQ_MODEL;
+            llmSuccess = true;
+          }
+        } else {
+          const errBody = await groqResponse.text();
+          console.warn(`Groq API error ${groqResponse.status}: ${errBody.substring(0, 200)}`);
+        }
+      } catch (groqErr) {
+        console.warn("Groq call failed, falling back to Gemini:", groqErr);
+      }
+    }
+
+    // --- Fallback to Gemini if Groq failed ---
+    if (!llmSuccess && geminiApiKey) {
+      const geminiUrl =
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiApiKey}`;
+
+      const geminiResponse = await fetch(geminiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [{ text: systemPrompt }],
           },
+          contents: [
+            { role: "user", parts: [{ text: body.question }] },
+          ],
+          generationConfig: {
+            maxOutputTokens: maxTokens,
+            temperature: 0.3,
+            responseMimeType: "text/plain",
+          },
+        }),
+      });
+
+      if (!geminiResponse.ok) {
+        const errorBody = await geminiResponse.text();
+        console.error(`Gemini API error: ${geminiResponse.status}`, errorBody);
+
+        if (geminiResponse.status === 429) {
+          return new Response(
+            JSON.stringify({ error: "AI provider rate limited. Try again in a moment." }),
+            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(
+          JSON.stringify({ error: "AI generation failed. Please try again." }),
+          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
 
+      const result: GeminiResponse = await geminiResponse.json();
+      const candidate = result.candidates?.[0];
+      if (!candidate?.content?.parts?.[0]?.text) {
+        return new Response(
+          JSON.stringify({ error: "AI could not generate an answer. Try rephrasing the question." }),
+          { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      answerText = candidate.content.parts[0].text;
+      inputTokens = result.usageMetadata?.promptTokenCount || 0;
+      outputTokens = result.usageMetadata?.candidatesTokenCount || 0;
+      modelUsed = result.modelVersion || GEMINI_MODEL;
+      llmSuccess = true;
+    }
+
+    // --- Both providers failed ---
+    if (!llmSuccess) {
       return new Response(
-        JSON.stringify({ error: "AI generation failed. Please try again." }),
-        {
-          status: 502,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
+        JSON.stringify({ error: "All AI providers failed. Please try again later." }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    const result: GeminiResponse = await geminiResponse.json();
-
-    // Handle empty/blocked responses (e.g., safety filter)
-    const candidate = result.candidates?.[0];
-    if (!candidate?.content?.parts?.[0]?.text) {
-      return new Response(
-        JSON.stringify({
-          error:
-            "AI could not generate an answer. Try rephrasing the question.",
-        }),
-        {
-          status: 422,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
+    // -- Write to cache (for cacheable operations with a JD hash) --
+    if (jdHash && actionType !== "answer_generation" && actionType !== "chat") {
+      // Fire and forget — don't block the response on cache write
+      writeCache(serviceClient, user.id, jdHash, actionType, answerText)
+        .catch((err) => console.error("Cache write error:", err));
     }
-
-    const answerText = candidate.content.parts[0].text;
-    const inputTokens = result.usageMetadata?.promptTokenCount || 0;
-    const outputTokens = result.usageMetadata?.candidatesTokenCount || 0;
 
     // -- Log usage --
     const { cost_usd, billed_usd } = calculateCost(inputTokens, outputTokens);
@@ -380,13 +556,14 @@ Deno.serve(async (req: Request) => {
       profile_id: user.id,
       tokens_input: inputTokens,
       tokens_output: outputTokens,
-      model: result.modelVersion || GEMINI_MODEL,
+      model: modelUsed,
       cost_usd,
       billed_usd,
-      action_type: "answer_generation",
+      action_type: actionType,
       metadata: {
         question_preview: body.question.substring(0, 100),
         application_id: body.application_id || null,
+        cached: false,
       },
     });
 
@@ -398,7 +575,7 @@ Deno.serve(async (req: Request) => {
     return new Response(
       JSON.stringify({
         answer: answerText,
-        model: result.modelVersion || GEMINI_MODEL,
+        model: modelUsed,
         usage: {
           input_tokens: inputTokens,
           output_tokens: outputTokens,
@@ -408,7 +585,7 @@ Deno.serve(async (req: Request) => {
       }),
       {
         status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       },
     );
   } catch (err) {

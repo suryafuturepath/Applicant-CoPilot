@@ -15,7 +15,8 @@
 - [ ] Google OAuth configured in Supabase (Auth → Providers → Google enabled)
 - [ ] Site URL set to `chrome-extension://khidbpecgknkokppgjaopamgglcmbkgd`
 - [ ] Redirect URLs include `https://oeeatotpwtftmvlydgsg.supabase.co/auth/v1/callback`
-- [ ] Gemini API key set as Supabase secret (`supabase secrets list` shows `GEMINI_API_KEY`)
+- [ ] Groq API key set as Supabase secret (`supabase secrets list` shows `GROQ_API_KEY`)
+- [ ] Gemini API key set as fallback (`supabase secrets list` shows `GEMINI_API_KEY`) — optional
 - [ ] `resumes` storage bucket created in Supabase Dashboard (private, 10MB limit)
 
 ---

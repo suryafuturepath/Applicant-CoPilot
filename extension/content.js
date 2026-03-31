@@ -910,6 +910,323 @@
       .jm-tab-content { display: none; }
       .jm-tab-content.active { display: block; }
 
+      /* ─── Ask AI Chat ─────────────────────────────────────── */
+      .jm-chat-container {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 130px);
+        max-height: 600px;
+      }
+      .jm-chat-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--ac-border);
+        margin-bottom: 8px;
+      }
+      .jm-chat-context {
+        font-size: 12px;
+        color: var(--ac-text-secondary);
+        font-weight: 500;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .jm-chat-clear {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 14px;
+        color: var(--ac-text-muted);
+        padding: 4px 6px;
+        border-radius: 4px;
+        transition: color 0.15s, background 0.15s;
+        min-width: 32px;
+        min-height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .jm-chat-clear:hover { color: #ef4444; background: var(--ac-hover-bg); }
+
+      .jm-chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 4px 0;
+        min-height: 0;
+      }
+
+      /* Empty states */
+      .jm-chat-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 32px 16px;
+        gap: 12px;
+        flex: 1;
+      }
+      .jm-chat-empty-icon { font-size: 36px; }
+      .jm-chat-empty-title { font-size: 15px; font-weight: 600; color: var(--ac-text); }
+      .jm-chat-empty-text { font-size: 13px; color: var(--ac-text-secondary); line-height: 1.5; }
+      .jm-chat-analyze-btn { margin-top: 8px; padding: 10px 24px; font-size: 13px; }
+
+      /* Suggestion chips */
+      .jm-chat-chips {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        width: 100%;
+        max-width: 280px;
+      }
+      .jm-chat-chip {
+        padding: 10px 12px;
+        border: 1px solid var(--ac-border);
+        border-radius: 10px;
+        background: var(--ac-bg);
+        color: var(--ac-text);
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s;
+        font-family: inherit;
+        min-height: 44px;
+        text-align: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .jm-chat-chip:hover {
+        border-color: var(--ac-primary);
+        color: var(--ac-primary);
+        background: var(--ac-hover-bg);
+      }
+
+      /* Resume instruction chips */
+      .jm-resume-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .jm-resume-chip {
+        padding: 5px 10px;
+        border: 1px solid var(--ac-border);
+        border-radius: 16px;
+        background: var(--ac-bg);
+        color: var(--ac-text-secondary);
+        font-size: 11px;
+        cursor: pointer;
+        transition: all 0.15s;
+        font-family: inherit;
+      }
+      .jm-resume-chip:hover {
+        border-color: var(--ac-primary);
+        color: var(--ac-primary);
+        background: var(--ac-hover-bg);
+      }
+      .jm-resume-chip.selected {
+        border-color: var(--ac-primary);
+        background: var(--ac-primary);
+        color: #fff;
+      }
+
+      /* Resume result section */
+      .jm-resume-result-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .jm-resume-result-badge {
+        font-size: 13px;
+        font-weight: 600;
+        color: #059669;
+      }
+      .jm-resume-result-meta {
+        font-size: 11px;
+        color: var(--ac-text-muted);
+      }
+      .jm-resume-mini-preview {
+        position: relative;
+        border: 1px solid var(--ac-border);
+        border-radius: 10px;
+        overflow: hidden;
+        max-height: 200px;
+        margin-bottom: 10px;
+        cursor: pointer;
+        transition: border-color 0.15s, box-shadow 0.15s;
+      }
+      .jm-resume-mini-preview:hover, .jm-resume-mini-preview:focus {
+        border-color: var(--ac-primary);
+        box-shadow: 0 0 0 2px var(--ac-shadow);
+      }
+      .jm-resume-mini-content {
+        padding: 12px 14px;
+        font-size: 8px;
+        line-height: 1.4;
+        color: var(--ac-text);
+        pointer-events: none;
+        transform-origin: top left;
+      }
+      .jm-resume-mini-content h1 { font-size: 14px; margin: 0 0 2px 0; }
+      .jm-resume-mini-content h2 { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; margin: 8px 0 3px 0; border-bottom: 1px solid var(--ac-border); padding-bottom: 2px; }
+      .jm-resume-mini-content h3 { font-size: 8px; font-weight: 600; margin: 4px 0 1px 0; }
+      .jm-resume-mini-content p { margin: 1px 0; }
+      .jm-resume-mini-content ul { margin: 2px 0; padding-left: 12px; }
+      .jm-resume-mini-content li { margin: 1px 0; }
+      .jm-resume-mini-fade {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 50px;
+        background: linear-gradient(transparent, var(--ac-bg));
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        padding-bottom: 8px;
+      }
+      .jm-resume-mini-fade span {
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--ac-primary);
+      }
+      .jm-resume-actions {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .jm-resume-redo {
+        width: 100%;
+        font-size: 12px;
+        color: var(--ac-text-secondary);
+        border: 1px dashed var(--ac-border);
+        background: none;
+      }
+      .jm-resume-redo:hover {
+        border-color: var(--ac-primary);
+        color: var(--ac-primary);
+      }
+
+      /* Message bubbles */
+      .jm-chat-bubble {
+        max-width: 85%;
+        padding: 10px 14px;
+        border-radius: 14px;
+        font-size: 13px;
+        line-height: 1.5;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        position: relative;
+      }
+      .jm-chat-user {
+        align-self: flex-end;
+        background: var(--ac-primary);
+        color: #fff;
+        border-bottom-right-radius: 4px;
+      }
+      .jm-chat-assistant {
+        align-self: flex-start;
+        background: var(--ac-hover-bg, #f3f4f6);
+        color: var(--ac-text);
+        border-bottom-left-radius: 4px;
+      }
+      .jm-chat-error {
+        align-self: flex-start;
+        background: #fef2f2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
+        border-bottom-left-radius: 4px;
+      }
+      .jm-chat-bubble-text { white-space: pre-wrap; }
+      .jm-chat-copy, .jm-chat-retry {
+        background: none;
+        border: none;
+        font-size: 11px;
+        cursor: pointer;
+        padding: 2px 6px;
+        margin-top: 6px;
+        border-radius: 4px;
+        font-family: inherit;
+        transition: background 0.15s;
+      }
+      .jm-chat-copy { color: var(--ac-text-muted); }
+      .jm-chat-copy:hover { background: rgba(0,0,0,0.05); color: var(--ac-text); }
+      .jm-chat-retry { color: #991b1b; font-weight: 500; }
+      .jm-chat-retry:hover { background: #fee2e2; }
+
+      /* Typing indicator */
+      .jm-chat-typing {
+        align-self: flex-start;
+        display: flex;
+        gap: 4px;
+        padding: 12px 16px;
+        background: var(--ac-hover-bg, #f3f4f6);
+        border-radius: 14px;
+        border-bottom-left-radius: 4px;
+      }
+      .jm-chat-typing span {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--ac-text-muted);
+        animation: jm-typing-dot 1.4s infinite ease-in-out;
+      }
+      .jm-chat-typing span:nth-child(2) { animation-delay: 0.2s; }
+      .jm-chat-typing span:nth-child(3) { animation-delay: 0.4s; }
+      @keyframes jm-typing-dot {
+        0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+        40% { opacity: 1; transform: scale(1); }
+      }
+
+      /* Input area */
+      .jm-chat-input-row {
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+        padding: 10px 0 0;
+        border-top: 1px solid var(--ac-border);
+        margin-top: auto;
+      }
+      .jm-chat-input {
+        flex: 1;
+        padding: 10px 12px;
+        border: 1px solid var(--ac-border);
+        border-radius: 10px;
+        font-size: 13px;
+        font-family: inherit;
+        resize: none;
+        max-height: 80px;
+        overflow-y: auto;
+        background: var(--ac-bg);
+        color: var(--ac-text);
+        line-height: 1.4;
+      }
+      .jm-chat-input:focus { outline: none; border-color: var(--ac-primary); }
+      .jm-chat-input:disabled { opacity: 0.5; }
+      .jm-chat-send {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        border: none;
+        border-radius: 10px;
+        background: var(--ac-primary);
+        color: #fff;
+        font-size: 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s;
+      }
+      .jm-chat-send:hover { background: var(--ac-primary-hover); }
+      .jm-chat-send:disabled { opacity: 0.5; cursor: default; }
+
       @media (max-width: 500px) {
         #jm-panel { width: 100vw !important; }
         .jm-body { padding: 12px !important; }
@@ -938,9 +1255,10 @@
         </div>
       </div>
       <div class="jm-nav">
-        <button class="jm-nav-btn" data-nav="profile">Profile</button>
-        <button class="jm-nav-btn" data-nav="qa">Q&A</button>
+        <button class="jm-nav-btn active" data-nav="home">Home</button>
+        <button class="jm-nav-btn" data-nav="ask-ai">Ask AI</button>
         <button class="jm-nav-btn" data-nav="saved">Saved</button>
+        <button class="jm-nav-btn" data-nav="profile">Profile</button>
         <button class="jm-nav-btn" data-nav="settings">Settings</button>
       </div>
       <div class="jm-body">
@@ -948,6 +1266,42 @@
         <div class="jm-tab-content" id="jmSavedTab">
           <div class="jm-saved-list" id="jmSavedList">
             <div class="jm-saved-empty" id="jmSavedEmpty">No saved jobs yet. Click 'Save Job' on any job posting to bookmark it.</div>
+          </div>
+        </div>
+
+        <!-- Ask AI chat tab -->
+        <div class="jm-tab-content" id="jmAskAiTab">
+          <div class="jm-chat-container">
+            <!-- Context badge — visible when analysis exists -->
+            <div class="jm-chat-header" id="jmChatHeader" style="display:none">
+              <span class="jm-chat-context" id="jmChatContext"></span>
+              <button class="jm-chat-clear" id="jmChatClear" aria-label="Clear conversation" title="Clear conversation">&#128465;</button>
+            </div>
+            <!-- Messages area -->
+            <div class="jm-chat-messages" id="jmChatMessages" role="log" aria-live="polite" aria-label="Chat messages">
+              <!-- Empty state: no analysis -->
+              <div class="jm-chat-empty" id="jmChatEmptyNoAnalysis">
+                <div class="jm-chat-empty-icon">&#128172;</div>
+                <div class="jm-chat-empty-title">Analyze a job first</div>
+                <div class="jm-chat-empty-text">I'll have full context of the JD and your profile to help you.</div>
+                <button class="jm-btn jm-btn-primary jm-chat-analyze-btn" id="jmChatAnalyzeBtn">Analyze Job</button>
+              </div>
+              <!-- Empty state: analysis done, no messages -->
+              <div class="jm-chat-empty" id="jmChatEmptyReady" style="display:none">
+                <div class="jm-chat-empty-text">I know this role and your profile. Ask me anything.</div>
+                <div class="jm-chat-chips" id="jmChatChips">
+                  <button class="jm-chat-chip" aria-label="Ask: Am I a good fit for this role?">Am I a good fit?</button>
+                  <button class="jm-chat-chip" aria-label="Ask: Help me prepare for the interview">Interview prep</button>
+                  <button class="jm-chat-chip" aria-label="Ask: Tell me about this company">Company research</button>
+                  <button class="jm-chat-chip" aria-label="Ask: What should I highlight from my experience?">What to highlight?</button>
+                </div>
+              </div>
+            </div>
+            <!-- Input area — sticky bottom -->
+            <div class="jm-chat-input-row" id="jmChatInputRow" style="display:none">
+              <textarea class="jm-chat-input" id="jmChatInput" placeholder="Ask anything..." rows="1" aria-label="Chat message input"></textarea>
+              <button class="jm-chat-send" id="jmChatSend" aria-label="Send message" title="Send">&#10148;</button>
+            </div>
           </div>
         </div>
 
@@ -976,7 +1330,6 @@
           <button class="jm-btn jm-btn-success" id="jmSaveJob" style="display:none">Save Job</button>
           <button class="jm-btn jm-btn-applied" id="jmMarkApplied" style="display:none">Mark as Applied</button>
           <button class="jm-btn jm-btn-outline" id="jmCoverLetterBtn" style="display:none">&#9993; Cover Letter</button>
-          <button class="jm-btn jm-btn-outline" id="jmRewriteBulletsBtn" style="display:none">&#9997; Improve Resume Bullets</button>
           <button class="jm-btn jm-btn-outline" id="jmGenerateResumeBtn" style="display:none">&#128196; ATS Resume</button>
         </div>
 
@@ -1037,30 +1390,55 @@
           <div class="jm-cover-letter" id="jmCoverLetterText"></div>
         </div>
 
-        <!-- Bullet rewriter output -->
-        <div class="jm-section" id="jmBulletSection" style="display:none">
-          <h3>Improved Resume Bullets</h3>
-          <div id="jmBulletList"></div>
-        </div>
-
         <!-- ATS Resume generator -->
         <div class="jm-section" id="jmResumeSection" style="display:none">
-          <div class="jm-section-head">
-            <h3>ATS-Optimized Resume</h3>
-            <span style="font-size:11px;background:#059669;color:#fff;padding:2px 8px;border-radius:10px;">90+ ATS</span>
-          </div>
-          <div style="margin-bottom:10px;">
-            <textarea class="jm-notes-textarea" id="jmResumeInstructions" placeholder="Optional instructions: e.g. 'Emphasize leadership experience', 'Remove internship from 2019', 'Highlight Python skills'..." style="min-height:50px;font-size:12px;"></textarea>
-          </div>
-          <div style="margin-bottom:10px;">
-            <button class="jm-btn jm-btn-primary" id="jmDoGenerateResume" style="width:100%;">Generate Tailored Resume</button>
-          </div>
-          <div id="jmResumeOutput" style="display:none;">
-            <div class="jm-cover-letter" id="jmResumeText" style="white-space:pre-wrap;font-size:12px;line-height:1.6;max-height:400px;overflow-y:auto;"></div>
-            <div style="display:flex;gap:8px;margin-top:10px;">
-              <button class="jm-btn jm-btn-primary" id="jmDownloadResumePDF" style="flex:1;">&#128196; Download PDF</button>
-              <button class="jm-btn jm-btn-secondary" id="jmCopyResume">Copy</button>
+          <!-- Build phase — instructions + generate -->
+          <div id="jmResumeBuild">
+            <div class="jm-section-head">
+              <h3>ATS-Optimized Resume</h3>
+              <span style="font-size:11px;background:#059669;color:#fff;padding:2px 8px;border-radius:10px;">90+ ATS</span>
             </div>
+            <div style="margin-bottom:8px;">
+              <div style="font-size:11px;color:var(--ac-text-secondary);margin-bottom:6px;">Tailor your resume (click to add):</div>
+              <div class="jm-resume-chips" id="jmResumeChips">
+                <button class="jm-resume-chip" data-instruction="Emphasize leadership and team management">Leadership</button>
+                <button class="jm-resume-chip" data-instruction="Highlight technical skills and programming experience">Technical</button>
+                <button class="jm-resume-chip" data-instruction="Focus on quantified achievements and metrics">Metrics</button>
+                <button class="jm-resume-chip" data-instruction="Rewrite bullets to match JD keywords exactly">Match JD</button>
+                <button class="jm-resume-chip" data-instruction="Condense to fit 1 page — prioritize recent and relevant experience only">Fit 1 Page</button>
+                <button class="jm-resume-chip" data-instruction="Emphasize cross-functional collaboration and stakeholder management">Cross-functional</button>
+              </div>
+            </div>
+            <div style="margin-bottom:10px;">
+              <textarea class="jm-notes-textarea" id="jmResumeInstructions" placeholder="Add your own: e.g. 'Remove internship from 2019', 'Add AWS cert', 'Emphasize Python + ML'..." style="min-height:50px;font-size:12px;"></textarea>
+            </div>
+            <button class="jm-btn jm-btn-primary" id="jmDoGenerateResume" style="width:100%;">&#10024; Generate Resume</button>
+          </div>
+
+          <!-- Result phase — preview + actions -->
+          <div id="jmResumeResult" style="display:none;">
+            <div class="jm-resume-result-header">
+              <span class="jm-resume-result-badge">&#9989; Resume ready</span>
+              <span class="jm-resume-result-meta" id="jmResumeResultMeta"></span>
+            </div>
+
+            <!-- Mini rendered preview (click to open full) -->
+            <div class="jm-resume-mini-preview" id="jmResumeMiniPreview" role="button" tabindex="0" aria-label="Click to open full resume preview">
+              <div class="jm-resume-mini-content" id="jmResumeMiniContent"></div>
+              <div class="jm-resume-mini-fade">
+                <span>Click to open full preview &#8599;</span>
+              </div>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="jm-resume-actions">
+              <button class="jm-btn jm-btn-primary" id="jmOpenResumePreview" style="flex:2;">&#128196; Open Full Preview</button>
+              <button class="jm-btn jm-btn-secondary" id="jmCopyResume" style="flex:1;">Copy</button>
+            </div>
+            <button class="jm-btn jm-btn-outline jm-resume-redo" id="jmRedoResume">&#128260; Regenerate with changes</button>
+
+            <!-- Hidden raw markdown storage -->
+            <div id="jmResumeText" style="display:none;"></div>
           </div>
         </div>
 
@@ -1091,21 +1469,63 @@
 
     panel.querySelector('#jmMarkApplied').addEventListener('click', markApplied);
     panel.querySelector('#jmCoverLetterBtn').addEventListener('click', generateCoverLetter);
-    panel.querySelector('#jmRewriteBulletsBtn').addEventListener('click', rewriteBullets);
     panel.querySelector('#jmGenerateResumeBtn').addEventListener('click', () => {
       const section = shadowRoot.getElementById('jmResumeSection');
-      section.style.display = section.style.display === 'none' ? 'block' : 'none';
+      if (section.style.display === 'none') {
+        section.style.display = 'block';
+        // Always show build view when opening from button
+        shadowRoot.getElementById('jmResumeBuild').style.display = 'block';
+        scrollPanelTo(section);
+      } else {
+        section.style.display = 'none';
+      }
     });
     panel.querySelector('#jmDoGenerateResume').addEventListener('click', generateATSResume);
-    panel.querySelector('#jmDownloadResumePDF').addEventListener('click', downloadResumeAsPDF);
+
+    // Resume instruction chip clicks — toggle chip and append/remove instruction
+    panel.querySelectorAll('.jm-resume-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const textarea = shadowRoot.getElementById('jmResumeInstructions');
+        const instruction = chip.dataset.instruction;
+        if (!textarea || !instruction) return;
+        const current = textarea.value;
+        if (chip.classList.contains('selected')) {
+          chip.classList.remove('selected');
+          textarea.value = current.replace(instruction, '').replace(/\.\s*\./g, '.').replace(/^\.\s*/, '').replace(/\s*\.\s*$/, '').trim();
+        } else {
+          chip.classList.add('selected');
+          textarea.value = current ? current + '. ' + instruction : instruction;
+        }
+      });
+    });
+
+    // Open full preview in a new tab (with download/print buttons built in)
+    const openPreviewHandler = () => {
+      const resumeMarkdown = shadowRoot.getElementById('jmResumeText').textContent;
+      if (!resumeMarkdown) return;
+      openResumePreviewTab(resumeMarkdown);
+    };
+    panel.querySelector('#jmOpenResumePreview').addEventListener('click', openPreviewHandler);
+    panel.querySelector('#jmResumeMiniPreview').addEventListener('click', openPreviewHandler);
+    panel.querySelector('#jmResumeMiniPreview').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPreviewHandler(); }
+    });
+
+    // Copy resume text
     panel.querySelector('#jmCopyResume').addEventListener('click', () => {
       const text = shadowRoot.getElementById('jmResumeText').textContent;
       navigator.clipboard.writeText(text).then(() => {
         const btn = shadowRoot.getElementById('jmCopyResume');
-        const orig = btn.textContent;
         btn.textContent = 'Copied!';
-        setTimeout(() => { btn.textContent = orig; }, 1500);
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
       }).catch(() => {});
+    });
+
+    // Redo — switch back to build view so user can tweak instructions
+    panel.querySelector('#jmRedoResume').addEventListener('click', () => {
+      shadowRoot.getElementById('jmResumeResult').style.display = 'none';
+      shadowRoot.getElementById('jmResumeBuild').style.display = 'block';
+      scrollPanelTo(shadowRoot.getElementById('jmResumeBuild'));
     });
     panel.querySelector('#jmApplyFill').addEventListener('click', applyAutofill);
     panel.querySelector('#jmCancelFill').addEventListener('click', cancelAutofill);
@@ -1128,18 +1548,91 @@
     // Theme toggle button
     panel.querySelector('#jmThemeToggle').addEventListener('click', cycleTheme);
 
-    // Nav buttons → open profile page at the right tab, or switch to Saved tab
+    // Nav buttons — Home and in-panel tabs stay in panel; Profile/Settings open profile page
     panel.querySelectorAll('.jm-nav-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const tab = btn.dataset.nav;
-        if (tab === 'saved') {
-          // Switch to Saved tab within the panel
-          activateSavedTab();
-        } else {
-          // Deactivate Saved tab highlight if switching away
+        if (tab === 'home') {
           deactivateSavedTab();
+          deactivateAskAiTab();
+          // Highlight Home nav button
+          shadowRoot.querySelectorAll('.jm-nav-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.nav === 'home');
+          });
+        } else if (tab === 'saved') {
+          deactivateAskAiTab();
+          activateSavedTab();
+        } else if (tab === 'ask-ai') {
+          deactivateSavedTab();
+          activateAskAiTab();
+        } else {
+          // Profile and Settings open in a new tab
           chrome.runtime.sendMessage({ type: 'OPEN_PROFILE_TAB', hash: tab });
         }
+      });
+    });
+
+    // ── Ask AI chat listeners ──────────────────────────────────────────
+    const chatInput = panel.querySelector('#jmChatInput');
+    const chatSend = panel.querySelector('#jmChatSend');
+    const chatAnalyze = panel.querySelector('#jmChatAnalyzeBtn');
+    const chatClear = panel.querySelector('#jmChatClear');
+
+    // Send on button click
+    if (chatSend) {
+      chatSend.addEventListener('click', () => {
+        if (chatInput) {
+          sendChatMessage(chatInput.value);
+          chatInput.value = '';
+          chatInput.style.height = 'auto';
+        }
+      });
+    }
+
+    // Send on Enter (Shift+Enter for newline), auto-grow textarea
+    if (chatInput) {
+      chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          sendChatMessage(chatInput.value);
+          chatInput.value = '';
+          chatInput.style.height = 'auto';
+        }
+      });
+      chatInput.addEventListener('input', () => {
+        chatInput.style.height = 'auto';
+        chatInput.style.height = Math.min(chatInput.scrollHeight, 80) + 'px';
+      });
+    }
+
+    // "Analyze Job" button inside empty state — triggers analysis then refreshes chat
+    if (chatAnalyze) {
+      chatAnalyze.addEventListener('click', () => {
+        deactivateAskAiTab();
+        analyzeJob(false);
+      });
+    }
+
+    // Clear chat
+    if (chatClear) {
+      chatClear.addEventListener('click', () => {
+        if (confirm('Clear this conversation?')) {
+          clearChat();
+        }
+      });
+    }
+
+    // Suggestion chip clicks → send as message
+    panel.querySelectorAll('.jm-chat-chip').forEach(chip => {
+      const CHIP_MESSAGES = {
+        'Am I a good fit?': 'Am I a good fit for this role?',
+        'Interview prep': 'Help me prepare for the interview',
+        'Company research': 'Tell me about this company',
+        'What to highlight?': 'What should I highlight from my experience?'
+      };
+      chip.addEventListener('click', () => {
+        const fullMessage = CHIP_MESSAGES[chip.textContent] || chip.textContent;
+        sendChatMessage(fullMessage);
       });
     });
   }
@@ -1171,14 +1664,283 @@
    */
   function deactivateSavedTab() {
     if (!shadowRoot) return;
-    shadowRoot.querySelectorAll('.jm-nav-btn').forEach(btn => {
-      btn.classList.remove('active');
-    });
     const savedTab = shadowRoot.getElementById('jmSavedTab');
     const mainTab = shadowRoot.getElementById('jmMainTab');
     if (savedTab) savedTab.classList.remove('active');
     if (mainTab) mainTab.classList.add('active');
   }
+
+  // ─── Ask AI chat tab ────────────────────────────────────────────
+
+  /** Module-level chat state */
+  let _chatMessages = [];    // [{role: 'user'|'assistant', content: string}]
+  let _chatWaiting = false;  // True while waiting for AI response
+
+  /** Simple hash for URL-based chat storage keys */
+  function hashUrl(url) {
+    let hash = 0;
+    for (let i = 0; i < url.length; i++) {
+      hash = ((hash << 5) - hash) + url.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash).toString(36);
+  }
+
+  /** Save chat history to chrome.storage via background.js */
+  function saveChatHistory() {
+    const urlHash = hashUrl(window.location.href);
+    sendMessage({
+      type: 'SAVE_CHAT',
+      urlHash,
+      messages: _chatMessages,
+      meta: {
+        jobTitle: currentAnalysis?.title || extractJobTitle() || '',
+        company: currentAnalysis?.company || extractCompany() || ''
+      }
+    }).catch(() => {});
+  }
+
+  /** Load chat history from chrome.storage and render it */
+  async function loadChatHistory() {
+    const urlHash = hashUrl(window.location.href);
+    try {
+      const data = await sendMessage({ type: 'GET_CHAT', urlHash });
+      if (data?.messages?.length > 0) {
+        _chatMessages = data.messages;
+        // Render all saved messages
+        for (const msg of _chatMessages) {
+          renderChatMessage(msg.role, msg.content);
+        }
+      }
+    } catch (_) {}
+  }
+
+  /**
+   * Activates the Ask AI tab: highlights nav, shows chat, hides other tabs.
+   * Updates empty state based on whether analysis has been performed.
+   */
+  function activateAskAiTab() {
+    if (!shadowRoot) return;
+    shadowRoot.querySelectorAll('.jm-nav-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.nav === 'ask-ai');
+    });
+    const askAiTab = shadowRoot.getElementById('jmAskAiTab');
+    const mainTab = shadowRoot.getElementById('jmMainTab');
+    const savedTab = shadowRoot.getElementById('jmSavedTab');
+    if (askAiTab) askAiTab.classList.add('active');
+    if (mainTab) mainTab.classList.remove('active');
+    if (savedTab) savedTab.classList.remove('active');
+    updateChatEmptyState();
+    // Load persisted chat history for this URL (if any)
+    if (_chatMessages.length === 0) {
+      loadChatHistory();
+    }
+  }
+
+  /**
+   * Deactivates the Ask AI tab: hides it, restores main tab.
+   */
+  function deactivateAskAiTab() {
+    if (!shadowRoot) return;
+    const askAiTab = shadowRoot.getElementById('jmAskAiTab');
+    const mainTab = shadowRoot.getElementById('jmMainTab');
+    if (askAiTab) askAiTab.classList.remove('active');
+    if (mainTab) mainTab.classList.add('active');
+    // Remove active from ask-ai nav if it was active
+    const askAiBtn = shadowRoot.querySelector('.jm-nav-btn[data-nav="ask-ai"]');
+    if (askAiBtn) askAiBtn.classList.remove('active');
+  }
+
+  /**
+   * Updates the chat empty state based on current analysis.
+   * Shows "Analyze first" if no analysis, or chips + input if ready.
+   */
+  function updateChatEmptyState() {
+    if (!shadowRoot) return;
+    const noAnalysis = shadowRoot.getElementById('jmChatEmptyNoAnalysis');
+    const ready = shadowRoot.getElementById('jmChatEmptyReady');
+    const inputRow = shadowRoot.getElementById('jmChatInputRow');
+    const header = shadowRoot.getElementById('jmChatHeader');
+    const contextEl = shadowRoot.getElementById('jmChatContext');
+
+    const hasAnalysis = !!currentAnalysis;
+    const hasMessages = _chatMessages.length > 0;
+
+    if (noAnalysis) noAnalysis.style.display = (!hasAnalysis && !hasMessages) ? 'flex' : 'none';
+    if (ready) ready.style.display = (hasAnalysis && !hasMessages) ? 'flex' : 'none';
+    if (inputRow) inputRow.style.display = hasAnalysis ? 'flex' : 'none';
+
+    // Show context badge when analysis exists
+    if (header && contextEl && hasAnalysis) {
+      const company = currentAnalysis.company || extractCompany() || '';
+      const title = currentAnalysis.title || extractJobTitle() || '';
+      const score = currentAnalysis.matchScore || currentAnalysis.score || '';
+      contextEl.textContent = [company, title, score ? score + '% match' : ''].filter(Boolean).join(' \u00B7 ');
+      header.style.display = 'flex';
+    } else if (header) {
+      header.style.display = 'none';
+    }
+  }
+
+  /**
+   * Appends a message bubble to the chat area.
+   * @param {'user'|'assistant'|'error'} role - The message sender.
+   * @param {string} text - The message content.
+   */
+  function renderChatMessage(role, text) {
+    if (!shadowRoot) return;
+    const container = shadowRoot.getElementById('jmChatMessages');
+    if (!container) return;
+
+    // Hide empty states once messages exist
+    const noAnalysis = shadowRoot.getElementById('jmChatEmptyNoAnalysis');
+    const ready = shadowRoot.getElementById('jmChatEmptyReady');
+    if (noAnalysis) noAnalysis.style.display = 'none';
+    if (ready) ready.style.display = 'none';
+
+    const bubble = document.createElement('div');
+    bubble.className = `jm-chat-bubble jm-chat-${role}`;
+
+    const textEl = document.createElement('div');
+    textEl.className = 'jm-chat-bubble-text';
+    textEl.textContent = text;
+    bubble.appendChild(textEl);
+
+    // Copy button on AI responses
+    if (role === 'assistant') {
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'jm-chat-copy';
+      copyBtn.textContent = 'Copy';
+      copyBtn.setAttribute('aria-label', 'Copy response');
+      copyBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(text).then(() => {
+          copyBtn.textContent = 'Copied!';
+          setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+        });
+      });
+      bubble.appendChild(copyBtn);
+    }
+
+    // Retry button on error messages
+    if (role === 'error') {
+      const retryBtn = document.createElement('button');
+      retryBtn.className = 'jm-chat-retry';
+      retryBtn.textContent = 'Retry';
+      retryBtn.setAttribute('aria-label', 'Retry last message');
+      retryBtn.addEventListener('click', () => {
+        bubble.remove();
+        // Re-send the last user message
+        const lastUserMsg = _chatMessages.filter(m => m.role === 'user').pop();
+        if (lastUserMsg) sendChatMessage(lastUserMsg.content, true);
+      });
+      bubble.appendChild(retryBtn);
+    }
+
+    container.appendChild(bubble);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  /** Shows the typing indicator (animated dots) */
+  function showTypingIndicator() {
+    if (!shadowRoot) return;
+    const container = shadowRoot.getElementById('jmChatMessages');
+    if (!container || container.querySelector('.jm-chat-typing')) return;
+    const indicator = document.createElement('div');
+    indicator.className = 'jm-chat-typing';
+    indicator.setAttribute('aria-label', 'AI is thinking');
+    indicator.innerHTML = '<span></span><span></span><span></span>';
+    container.appendChild(indicator);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  /** Removes the typing indicator */
+  function removeTypingIndicator() {
+    if (!shadowRoot) return;
+    const indicator = shadowRoot.querySelector('.jm-chat-typing');
+    if (indicator) indicator.remove();
+  }
+
+  /**
+   * Sends a user message to the AI and renders the response.
+   * @param {string} text - The user's message.
+   * @param {boolean} [isRetry=false] - If true, don't add to history (already there).
+   */
+  async function sendChatMessage(text, isRetry = false) {
+    if (!text.trim() || _chatWaiting) return;
+
+    // Render user bubble and add to history
+    if (!isRetry) {
+      _chatMessages.push({ role: 'user', content: text.trim() });
+      renderChatMessage('user', text.trim());
+    }
+
+    // Hide suggestion chips after first message
+    const chips = shadowRoot?.getElementById('jmChatChips');
+    if (chips) chips.style.display = 'none';
+    const readyEmpty = shadowRoot?.getElementById('jmChatEmptyReady');
+    if (readyEmpty) readyEmpty.style.display = 'none';
+
+    // Show typing indicator and disable input
+    _chatWaiting = true;
+    const sendBtn = shadowRoot?.getElementById('jmChatSend');
+    const input = shadowRoot?.getElementById('jmChatInput');
+    if (sendBtn) sendBtn.disabled = true;
+    if (input) input.disabled = true;
+    showTypingIndicator();
+
+    try {
+      // Send to background.js — last 10 messages for context, with 30s timeout
+      const history = _chatMessages.slice(-10);
+      const responsePromise = sendMessage({
+        type: 'CHAT_MESSAGE',
+        message: text.trim(),
+        history,
+        jobUrl: window.location.href
+      });
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Response timed out. The AI took too long — please try again.')), 30000)
+      );
+      const response = await Promise.race([responsePromise, timeoutPromise]);
+
+      removeTypingIndicator();
+
+      if (response?.reply) {
+        _chatMessages.push({ role: 'assistant', content: response.reply });
+        renderChatMessage('assistant', response.reply);
+        saveChatHistory();
+      } else {
+        renderChatMessage('error', 'No response received. Try again.');
+      }
+    } catch (err) {
+      removeTypingIndicator();
+      renderChatMessage('error', err.message || 'Something went wrong. Try again.');
+    } finally {
+      _chatWaiting = false;
+      if (sendBtn) sendBtn.disabled = false;
+      if (input) {
+        input.disabled = false;
+        input.focus();
+      }
+    }
+  }
+
+  /**
+   * Clears the chat UI and message history for the current page.
+   */
+  function clearChat() {
+    _chatMessages = [];
+    if (!shadowRoot) return;
+    const container = shadowRoot.getElementById('jmChatMessages');
+    if (container) {
+      container.querySelectorAll('.jm-chat-bubble, .jm-chat-typing').forEach(el => el.remove());
+    }
+    // Clear persisted history for this URL
+    const urlHash = hashUrl(window.location.href);
+    sendMessage({ type: 'CLEAR_CHAT', urlHash }).catch(() => {});
+    updateChatEmptyState();
+  }
+
+  // ─── Saved Jobs tab ────────────────────────────────────────────
 
   /**
    * Fetches saved jobs from background.js and renders them in the Saved tab.
@@ -1506,8 +2268,8 @@
 
       // Hide all result sections so the panel is clean for the new resume
       ['jmScoreSection','jmMatchingSection','jmMissingSection','jmRecsSection',
-       'jmInsightsSection','jmKeywordsSection','jmCoverLetterSection','jmBulletSection',
-       'jmSaveJob','jmMarkApplied','jmCoverLetterBtn','jmRewriteBulletsBtn'
+       'jmInsightsSection','jmKeywordsSection','jmCoverLetterSection',
+       'jmSaveJob','jmMarkApplied','jmCoverLetterBtn'
       ].forEach(id => {
         const el = shadowRoot.getElementById(id);
         if (el) el.style.display = 'none';
@@ -1629,59 +2391,105 @@
    * Tries site-specific selectors first, then generic heuristics.
    * @returns {string} The extracted job description text, or '' if not found.
    */
+  /**
+   * Extracts the job description from the current page using a two-stage approach:
+   *   Stage 1 — Platform-specific selectors for P0/P1 ATS platforms (fast, precise)
+   *   Stage 2 — Readability-inspired text-density algorithm (works on any site)
+   *
+   * This combo replaces the old 20+ fragile selector list with a focused set of
+   * 5 high-confidence selectors plus a universal fallback that scores DOM nodes
+   * by text density, paragraph count, and link ratio.
+   *
+   * @returns {string} The extracted job description text.
+   */
   function extractJobDescription() {
-    // ATS-specific selectors
-    const selectors = [
-      // Greenhouse
-      '#content .job-post-content',
-      '#content #gh_jid',
-      '.job__description',
-      // Lever
-      '.posting-page .content',
-      '.section-wrapper.page-full-width',
-      // Workday
-      '[data-automation-id="jobPostingDescription"]',
-      '.job-description',
-      // LinkedIn
-      '.jobs-description__content',
-      '.description__text',
-      '.jobs-box__html-content',
-      // Indeed
-      '#jobDescriptionText',
-      '.jobsearch-jobDescriptionText',
-      // Generic
-      '[class*="job-description"]',
-      '[class*="jobDescription"]',
-      '[id*="job-description"]',
-      '[id*="jobDescription"]',
-      '[class*="posting-description"]',
-      'article[class*="job"]',
-      '.job-details',
-      '.job-content',
+    // ── Stage 1: Platform selectors (P0/P1 — covers ~90% of usage) ──────
+    const PLATFORM_SELECTORS = [
+      // LinkedIn (P0) — multiple variants for different LinkedIn layouts
+      '.jobs-description__content, .description__text, .jobs-box__html-content',
+      // Workday (P0)
+      '[data-automation-id="jobPostingDescription"], .job-description',
+      // Greenhouse (P1)
+      '#content .job-post-content, #content #gh_jid, .job__description',
+      // Lever (P1)
+      '.posting-page .content, .section-wrapper.page-full-width',
+      // Indeed (P2)
+      '#jobDescriptionText, .jobsearch-jobDescriptionText',
     ];
 
-    for (const sel of selectors) {
-      const el = document.querySelector(sel);
-      if (el && el.innerText.trim().length > 100) {
-        return el.innerText.trim();
+    for (const selectorGroup of PLATFORM_SELECTORS) {
+      for (const sel of selectorGroup.split(', ')) {
+        const el = document.querySelector(sel);
+        if (el && el.innerText.trim().length > 100) {
+          return el.innerText.trim();
+        }
       }
     }
 
-    // Fallback: try to find the largest text block on page
-    const blocks = document.querySelectorAll('main, article, [role="main"], .content, #content');
-    let bestBlock = null;
-    let bestLen = 0;
-    for (const block of blocks) {
-      const text = block.innerText.trim();
-      if (text.length > bestLen) {
-        bestLen = text.length;
-        bestBlock = text;
+    // ── Stage 2: Readability-inspired content extraction ────────────────
+    // Scores every candidate node by text density, paragraph count, and
+    // inverse link density. The highest-scoring node is the JD.
+    return _extractByTextDensity();
+  }
+
+  /**
+   * Readability-inspired algorithm that finds the main content block on any page
+   * by scoring DOM nodes on text density, paragraph/list-item count, and link ratio.
+   *
+   * How it works:
+   *   1. Collect all semantic container nodes (article, section, main, div, td)
+   *   2. For each node, compute:
+   *      - wordCount: total words in innerText (more words = more likely content)
+   *      - paragraphCount: number of <p> and <li> children (structured content signal)
+   *      - linkDensity: ratio of link text to total text (high = navigation, low = content)
+   *   3. Score = (wordCount × 1) + (paragraphCount × 10) − (linkDensity × 500)
+   *   4. Nodes with < 80 words or link density > 0.5 are skipped (nav/footer/sidebar)
+   *   5. The highest scoring node wins
+   *
+   * This reliably extracts JDs from unknown ATS platforms, career pages, and
+   * custom job boards without any site-specific selectors.
+   *
+   * @returns {string} The extracted content text, or first 10000 chars of body as last resort.
+   */
+  function _extractByTextDensity() {
+    const candidates = document.querySelectorAll('article, section, main, [role="main"], div, td');
+    let bestNode = null;
+    let bestScore = 0;
+
+    for (const node of candidates) {
+      const text = node.innerText || '';
+      const words = text.split(/\s+/).filter(w => w.length > 0);
+      const wordCount = words.length;
+
+      // Skip nodes that are too short to be a JD
+      if (wordCount < 80) continue;
+
+      // Count structured content indicators (paragraphs and list items)
+      const paragraphCount = node.querySelectorAll('p, li').length;
+
+      // Calculate link density: ratio of anchor text to total text
+      const links = node.querySelectorAll('a');
+      let linkTextLen = 0;
+      for (const a of links) linkTextLen += (a.innerText || '').length;
+      const linkDensity = text.length > 0 ? linkTextLen / text.length : 0;
+
+      // High link density = navigation/footer/sidebar — skip
+      if (linkDensity > 0.5) continue;
+
+      // Score: more words + more structured content − link-heavy content
+      const score = (wordCount * 1) + (paragraphCount * 10) - (linkDensity * 500);
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestNode = node;
       }
     }
 
-    if (bestBlock && bestLen > 200) return bestBlock;
+    if (bestNode) {
+      return bestNode.innerText.trim();
+    }
 
-    // Last resort: body text
+    // Last resort: body text (capped at 10000 chars)
     return document.body.innerText.substring(0, 10000);
   }
 
@@ -1821,10 +2629,11 @@
       renderAnalysis(cached.response);
       shadowRoot.getElementById('jmSaveJob').style.display = 'flex';
       shadowRoot.getElementById('jmCoverLetterBtn').style.display = 'flex';
-      shadowRoot.getElementById('jmRewriteBulletsBtn').style.display = 'flex';
+
       shadowRoot.getElementById('jmGenerateResumeBtn').style.display = 'flex';
       btn.textContent = 'Re-Analyze';
       setStatus('Showing cached results.', 'success');
+      updateChatEmptyState();
       setTimeout(clearStatus, 2000);
       return;
     }
@@ -1862,7 +2671,8 @@
         type: 'ANALYZE_JOB',
         jobDescription: jd,
         jobTitle: title,
-        company: company
+        company: company,
+        url: window.location.href
       });
 
       currentAnalysis = { ...response, title, company, location, salary, url: pageUrl };
@@ -1870,6 +2680,8 @@
       analysisSucceeded = true;
       renderAnalysis(response);
       clearStatus();
+      // Update Ask AI chat state so it knows analysis is available
+      updateChatEmptyState();
 
       // Show truncation notices if text was trimmed
       shadowRoot.getElementById('jmTruncNotice').style.display = response.jdTruncated ? 'block' : 'none';
@@ -1882,11 +2694,10 @@
         appliedBtn.style.display = 'flex';
       }
       shadowRoot.getElementById('jmCoverLetterBtn').style.display = 'flex';
-      shadowRoot.getElementById('jmRewriteBulletsBtn').style.display = 'flex';
+
       shadowRoot.getElementById('jmGenerateResumeBtn').style.display = 'flex';
       // Reset any previous AI output sections
       shadowRoot.getElementById('jmCoverLetterSection').style.display = 'none';
-      shadowRoot.getElementById('jmBulletSection').style.display = 'none';
       shadowRoot.getElementById('jmResumeSection').style.display = 'none';
     } catch (err) {
       setStatus('Error: ' + err.message, 'error');
@@ -3507,8 +4318,10 @@
         jobDescription: jd,
         analysis: {
           matchingSkills: currentAnalysis.matchingSkills,
-          matchScore: currentAnalysis.matchScore
-        }
+          matchScore: currentAnalysis.matchScore,
+          jdDigest: currentAnalysis.jdDigest || null
+        },
+        url: window.location.href
       });
       // Support both old string and new object response format
       const text = typeof clResult === 'string' ? clResult : clResult.text;
@@ -3525,62 +4338,6 @@
     }
   }
 
-  // ─── Bullet rewriter ──────────────────────────────────────────
-
-  /**
-   * Requests AI-rewritten resume bullets targeted at the current job's missing skills.
-   * Shows the Improved Resume Bullets section immediately (before AI responds) so the
-   * user can see a loading state, then populates it with before/after pairs.
-   * Each bullet has a Copy button to copy the improved version to clipboard.
-   * @async
-   */
-  async function rewriteBullets() {
-    const btn = shadowRoot.getElementById('jmRewriteBulletsBtn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="jm-spinner"></span> Analyzing...';
-    const section = shadowRoot.getElementById('jmBulletSection');
-    const list = shadowRoot.getElementById('jmBulletList');
-    list.innerHTML = '';
-    section.style.display = 'block';
-    try {
-      if (!currentAnalysis) throw new Error('Analyze the job first.');
-      const jd = extractJobDescription();
-      const bullets = await sendMessage({
-        type: 'REWRITE_BULLETS',
-        jobDescription: jd,
-        missingSkills: currentAnalysis.missingSkills || []
-      });
-
-      if (!Array.isArray(bullets) || bullets.length === 0) {
-        list.innerHTML = '<p style="font-size:12px;color:var(--ac-text-secondary);">No bullet improvements generated. Your resume experience section may be empty or the AI could not suggest improvements.</p>';
-      } else {
-        bullets.forEach(b => {
-          const item = document.createElement('div');
-          item.className = 'jm-bullet-item';
-          item.innerHTML = `
-            <div class="jm-bullet-job">${escapeHTML(b.job || '')}</div>
-            <div class="jm-bullet-before">${escapeHTML(b.original || '')}</div>
-            <div class="jm-bullet-after">${escapeHTML(b.improved || '')}</div>
-            <button class="jm-btn jm-btn-secondary jm-bullet-copy">Copy</button>`;
-          item.querySelector('.jm-bullet-copy').addEventListener('click', () => {
-            navigator.clipboard.writeText(b.improved || '').then(() => {
-              const cb = item.querySelector('.jm-bullet-copy');
-              cb.textContent = 'Copied!';
-              setTimeout(() => { cb.textContent = 'Copy'; }, 1500);
-            }).catch(() => {});
-          });
-          list.appendChild(item);
-        });
-      }
-    } catch (err) {
-      list.innerHTML = `<p style="font-size:12px;color:#dc2626;">Error: ${escapeHTML(err.message)}</p>`;
-    } finally {
-      scrollPanelTo(section);
-      btn.disabled = false;
-      btn.innerHTML = '&#9997; Improve Resume Bullets';
-    }
-  }
-
   // ─── ATS Resume Generator ────────────────────────────────────
 
   /**
@@ -3588,12 +4345,31 @@
    * Sends GENERATE_RESUME message to background, displays result in the resume section.
    * @async
    */
+  /**
+   * Converts markdown to simple HTML for the mini preview inside the panel.
+   * Lighter than the full PDF version — just enough for visual hierarchy.
+   */
+  function markdownToPreviewHTML(md) {
+    return md
+      .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^\*(.+)\*$/gm, '<p style="color:var(--ac-text-muted);"><em>$1</em></p>')
+      .replace(/^[•\-\*] (.+)$/gm, '<li>$1</li>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/^(?!<)(.+)$/gm, '<p>$1</p>')
+      .replace(/<p><\/p>/g, '')
+      // Wrap consecutive <li> items in <ul>
+      .replace(/(<li>.*<\/li>\n?)+/g, (match) => '<ul>' + match + '</ul>');
+  }
+
   async function generateATSResume() {
     const btn = shadowRoot.getElementById('jmDoGenerateResume');
+    const buildSection = shadowRoot.getElementById('jmResumeBuild');
+    const resultSection = shadowRoot.getElementById('jmResumeResult');
+
     btn.disabled = true;
     btn.innerHTML = '<span class="jm-spinner"></span> Generating resume...';
-    const output = shadowRoot.getElementById('jmResumeOutput');
-    output.style.display = 'none';
 
     try {
       if (!currentAnalysis) throw new Error('Analyze the job first.');
@@ -3603,40 +4379,86 @@
       const result = await sendMessage({
         type: 'GENERATE_RESUME',
         jobDescription: jd,
-        jobTitle: currentAnalysis.title || currentJobTitle || '',
-        company: currentAnalysis.company || currentCompany || '',
+        jobTitle: currentAnalysis.title || extractJobTitle() || '',
+        company: currentAnalysis.company || extractCompany() || '',
         customInstructions: instructions || undefined,
+        url: window.location.href,
       });
 
       const text = typeof result === 'string' ? result : result.text;
+
+      // Store raw markdown
       shadowRoot.getElementById('jmResumeText').textContent = text;
-      output.style.display = 'block';
-      scrollPanelTo(output);
+
+      // Render mini preview as formatted HTML
+      const miniContent = shadowRoot.getElementById('jmResumeMiniContent');
+      miniContent.innerHTML = markdownToPreviewHTML(text);
+
+      // Show context in result header
+      const meta = shadowRoot.getElementById('jmResumeResultMeta');
+      const company = currentAnalysis.company || extractCompany() || '';
+      const role = currentAnalysis.title || extractJobTitle() || '';
+      meta.textContent = [company, role].filter(Boolean).join(' \u00B7 ');
+
+      // Switch from build → result view
+      buildSection.style.display = 'none';
+      resultSection.style.display = 'block';
+      scrollPanelTo(resultSection);
+
     } catch (err) {
-      shadowRoot.getElementById('jmResumeText').textContent = 'Error: ' + err.message;
-      output.style.display = 'block';
+      setStatus('Resume generation failed: ' + err.message, 'error');
     } finally {
       btn.disabled = false;
-      btn.innerHTML = 'Generate Tailored Resume';
+      btn.innerHTML = '&#10024; Generate Resume';
     }
   }
 
   /**
-   * Opens a new window with the generated resume formatted as clean HTML,
-   * then triggers the browser's print dialog for save-as-PDF.
+   * Opens a new tab with the generated resume as a beautifully formatted HTML page.
+   * The page includes its own "Download PDF" and "Print" action bar at the top,
+   * which hides when printing. No more auto-triggering the print dialog.
+   * @param {string} resumeMarkdown - The raw markdown resume text.
    */
-  function downloadResumeAsPDF() {
-    const resumeMarkdown = shadowRoot.getElementById('jmResumeText').textContent;
+  function openResumePreviewTab(resumeMarkdown) {
     if (!resumeMarkdown || resumeMarkdown.startsWith('Error:')) return;
 
-    // Convert markdown to simple HTML
     const html = markdownToResumeHTML(resumeMarkdown);
 
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(html);
-    printWindow.document.close();
-    // Small delay to ensure styles are applied before print dialog
-    setTimeout(() => { printWindow.print(); }, 500);
+    const previewWindow = window.open('', '_blank');
+    previewWindow.document.write(html);
+    previewWindow.document.close();
+
+    // Attach event listeners after DOM is written (inline onclick can be blocked by CSP)
+    previewWindow.addEventListener('DOMContentLoaded', () => {
+      attachPreviewListeners(previewWindow);
+    });
+    // Fallback if DOMContentLoaded already fired
+    setTimeout(() => attachPreviewListeners(previewWindow), 200);
+  }
+
+  /** Attaches click handlers to the preview tab's action buttons. */
+  function attachPreviewListeners(win) {
+    try {
+      const doc = win.document;
+      const printBtn = doc.getElementById('resumePrintBtn');
+      const copyBtn = doc.getElementById('resumeCopyBtn');
+      if (printBtn && !printBtn._bound) {
+        printBtn._bound = true;
+        printBtn.addEventListener('click', () => win.print());
+      }
+      if (copyBtn && !copyBtn._bound) {
+        copyBtn._bound = true;
+        copyBtn.addEventListener('click', () => {
+          const content = doc.querySelector('.resume-content');
+          if (content) {
+            win.navigator.clipboard.writeText(content.innerText).then(() => {
+              copyBtn.textContent = 'Copied!';
+              setTimeout(() => { copyBtn.textContent = 'Copy Text'; }, 1500);
+            });
+          }
+        });
+      }
+    } catch (_) {}
   }
 
   /**
@@ -3645,48 +4467,91 @@
    * @returns {string} Complete HTML document string.
    */
   function markdownToResumeHTML(md) {
-    // Process markdown line by line
     let html = md
-      // H1: Name
-      .replace(/^# (.+)$/gm, '<h1 style="font-size:22px;margin:0 0 4px 0;color:#1a1a1a;">$1</h1>')
-      // H2: Section headings
-      .replace(/^## (.+)$/gm, '<h2 style="font-size:14px;text-transform:uppercase;letter-spacing:1px;border-bottom:1.5px solid #333;padding-bottom:3px;margin:18px 0 8px 0;color:#1a1a1a;">$1</h2>')
-      // H3: Role/Company
-      .replace(/^### (.+)$/gm, '<h3 style="font-size:13px;margin:10px 0 2px 0;color:#1a1a1a;">$1</h3>')
-      // Italic dates
-      .replace(/^\*(.+)\*$/gm, '<div style="font-size:11px;color:#666;margin-bottom:4px;">$1</div>')
-      // Bullet points
-      .replace(/^[•\-\*] (.+)$/gm, '<div style="padding-left:16px;text-indent:-10px;margin:2px 0;font-size:12px;">• $1</div>')
-      // Bold
+      .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^\*(.+)\*$/gm, '<div class="dates">$1</div>')
+      .replace(/^[•\-\*] (.+)$/gm, '<div class="bullet">&bull; $1</div>')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      // Remaining lines (contact info, plain text)
-      .replace(/^(?!<)(.+)$/gm, '<p style="margin:2px 0;font-size:12px;color:#333;">$1</p>');
+      .replace(/^(?!<)(.+)$/gm, '<p>$1</p>');
 
-    // Remove excessive empty paragraphs
-    html = html.replace(/<p style="[^"]*"><\/p>/g, '');
+    html = html.replace(/<p><\/p>/g, '');
 
     return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Resume</title>
+  <title>Resume — Applicant Copilot</title>
   <style>
     @page { margin: 0.6in 0.7in; size: letter; }
+    * { box-sizing: border-box; }
     body {
       font-family: 'Georgia', 'Times New Roman', serif;
       font-size: 12px;
-      line-height: 1.45;
+      line-height: 1.5;
       color: #1a1a1a;
-      max-width: 100%;
-      margin: 0;
-      padding: 0;
+      max-width: 750px;
+      margin: 0 auto;
+      padding: 20px 40px;
     }
+    h1 { font-size: 22px; margin: 0 0 4px 0; color: #111; }
+    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.2px; border-bottom: 1.5px solid #333; padding-bottom: 3px; margin: 20px 0 8px 0; color: #111; }
+    h3 { font-size: 13px; margin: 10px 0 2px 0; color: #111; }
+    p { margin: 2px 0; font-size: 12px; color: #333; }
+    .dates { font-size: 11px; color: #555; margin-bottom: 4px; font-style: italic; }
+    .bullet { padding-left: 16px; text-indent: -12px; margin: 2px 0; font-size: 12px; }
+    strong { font-weight: 700; }
+
+    /* Action bar — hidden when printing */
+    .action-bar {
+      position: sticky;
+      top: 0;
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: -20px -40px 20px -40px;
+      z-index: 10;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    .action-bar .label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #334155;
+      margin-right: auto;
+    }
+    .action-bar button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s;
+    }
+    .btn-primary { background: #3b82f6; color: #fff; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-secondary { background: #e2e8f0; color: #334155; }
+    .btn-secondary:hover { background: #cbd5e1; }
+
     @media print {
-      body { -webkit-print-color-adjust: exact; }
+      .action-bar { display: none !important; }
+      body { padding: 0; margin: 0; max-width: 100%; }
     }
   </style>
 </head>
-<body>${html}</body>
+<body>
+  <div class="action-bar">
+    <span class="label">Resume Preview</span>
+    <button class="btn-secondary" id="resumeCopyBtn">Copy Text</button>
+    <button class="btn-primary" id="resumePrintBtn">Download PDF</button>
+  </div>
+  <div class="resume-content">${html}</div>
+</body>
 </html>`;
   }
 
@@ -3843,6 +4708,8 @@
     _pendingAnswers = null;
     clearAllChips();
     clearAutofillBadges();
+    // Reset Ask AI chat for the new job
+    clearChat();
     if (shadowRoot && panelOpen) {
       const analyzeBtn = shadowRoot.getElementById('jmAnalyze');
       if (analyzeBtn && analyzeBtn.textContent === 'Re-Analyze') analyzeBtn.textContent = 'Analyze Job';
@@ -3851,8 +4718,8 @@
       [
         'jmScoreSection', 'jmMatchingSection', 'jmMissingSection', 'jmRecsSection',
         'jmInsightsSection', 'jmKeywordsSection', 'jmTruncNotice', 'jmResumeTruncNotice',
-        'jmAutofillPreview', 'jmCoverLetterSection', 'jmBulletSection', 'jmResumeSection',
-        'jmJobInfo', 'jmSaveJob', 'jmMarkApplied', 'jmCoverLetterBtn', 'jmRewriteBulletsBtn',
+        'jmAutofillPreview', 'jmCoverLetterSection', 'jmResumeSection',
+        'jmJobInfo', 'jmSaveJob', 'jmMarkApplied', 'jmCoverLetterBtn',
         'jmGenerateResumeBtn'
       ].forEach(id => {
         const el = shadowRoot.getElementById(id);

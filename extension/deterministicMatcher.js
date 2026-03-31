@@ -78,7 +78,42 @@ const TOPIC_PATTERNS = {
   // Visa sponsorship — "Will you now or in the future require sponsorship?"
   sponsorship: [
     /\bsponsor/i, /\bvisa\b/i, /\bh[-\s]?1b\b/i
-  ]
+  ],
+
+  // ── New topics for expanded deterministic matching ─────────────────────────
+
+  // Direct profile field lookups — no AI needed
+  first_name: [/\bfirst.?name\b/i, /\bgiven.?name\b/i],
+  last_name: [/\blast.?name\b/i, /\bsurname\b/i, /\bfamily.?name\b/i],
+  full_name: [/\bfull.?name\b/i, /\byour.?name\b/i, /\bcandidate.?name\b/i, /\blegal.?name\b/i],
+  email: [/\bemail\b/i, /\be-?mail\b/i],
+  phone: [/\bphone\b/i, /\bmobile\b/i, /\bcell\b/i, /\btelephone\b/i, /\bcontact.?number\b/i],
+  linkedin_url: [/\blinkedin\b/i],
+  website_url: [/\bportfolio\b/i, /\bwebsite\b/i, /\bpersonal.?site\b/i],
+  github_url: [/\bgithub\b/i],
+  location: [/\bcity\b/i, /\blocation\b/i, /\baddress\b/i, /\bwhere.*based\b/i, /\bwhere.*located\b/i],
+  current_title: [/\bcurrent.?title\b/i, /\bjob.?title\b/i, /\bcurrent.?role\b/i, /\bcurrent.?position\b/i],
+  current_employer: [/\bcurrent.?employer\b/i, /\bcurrent.?company\b/i],
+
+  // Date/availability fields
+  start_date: [/\bstart.?date\b/i, /\bavailab/i, /\bwhen.*start\b/i, /\bearliest.*date\b/i, /\bbegin.?date\b/i],
+
+  // Salary fields
+  salary: [/\bsalary\b/i, /\bcompensation\b/i, /\bdesired.?pay\b/i, /\bexpected.?pay\b/i, /\bpay.?rate\b/i, /\bhourly.?rate\b/i],
+
+  // Simple yes/no fields with clear context
+  background_check: [/\bbackground.?check\b/i, /\bcriminal.?record\b/i],
+  drug_test: [/\bdrug.?test\b/i, /\bdrug.?screen\b/i],
+  drivers_license: [/\bdriver.?s?.?licen[sc]e\b/i, /\bdriving.?licen[sc]e\b/i],
+  age_18: [/\b(?:at least |over )?18\b/i, /\blegal.*age\b/i, /\bof.?age\b/i],
+  relocation: [/\brelocat/i, /\bwilling.*move\b/i],
+  travel: [/\btravel\b/i, /\bwilling.*travel\b/i],
+
+  // Education level
+  education_level: [/\bhighest.*(?:education|degree|level)\b/i, /\beducation.*level\b/i, /\bdegree.*completed\b/i],
+
+  // How did you hear about us
+  referral_source: [/\bhow.*hear\b/i, /\bhow.*find\b/i, /\breferr/i, /\bsource\b/i]
 };
 
 // ─── Topic → Q&A keyword lookup table ────────────────────────────────────────
@@ -100,7 +135,29 @@ const TOPIC_TO_QA_KEYWORDS = {
   disability:         ['disability'],
   pronouns:           ['pronoun'],
   work_auth:          ['authorized to work', 'work authorization', 'legally authorized', 'eligible to work'],
-  sponsorship:        ['sponsorship', 'visa', 'sponsor']
+  sponsorship:        ['sponsorship', 'visa', 'sponsor'],
+  // New expanded topics
+  first_name:         ['first name'],
+  last_name:          ['last name'],
+  full_name:          ['full name'],
+  email:              ['email'],
+  phone:              ['phone'],
+  linkedin_url:       ['linkedin'],
+  website_url:        ['portfolio', 'website'],
+  github_url:         ['github'],
+  location:           ['city', 'location', 'address'],
+  current_title:      ['current job title', 'current title'],
+  current_employer:   ['current employer', 'current company'],
+  start_date:         ['start date', 'available', 'earliest'],
+  salary:             ['salary', 'desired salary', 'hourly rate'],
+  background_check:   ['background check'],
+  drug_test:          ['drug test'],
+  drivers_license:    ['driver'],
+  age_18:             ['18 years', 'of age'],
+  relocation:         ['relocate'],
+  travel:             ['travel'],
+  education_level:    ['education', 'highest', 'degree'],
+  referral_source:    ['how did you hear', 'how heard']
 };
 
 // ─── Synonym maps for deterministic option matching ───────────────────────────
@@ -256,13 +313,42 @@ function findProfileAnswer(topic, profile) {
   // Guard: profile may not be loaded yet
   if (!profile) return null;
 
-  if (topic === 'work_auth') {
-    // The profile stores work authorization as a top-level string field
-    if (profile.workAuthorization) return profile.workAuthorization;
+  // Direct profile field lookups — zero AI tokens
+  switch (topic) {
+    case 'work_auth':
+      return profile.workAuthorization || null;
+    case 'first_name':
+      return profile.name ? profile.name.split(' ')[0] : null;
+    case 'last_name':
+      return profile.name ? profile.name.split(' ').slice(1).join(' ') : null;
+    case 'full_name':
+      return profile.name || null;
+    case 'email':
+      return profile.email || null;
+    case 'phone':
+      return profile.phone || null;
+    case 'linkedin_url':
+      return profile.linkedin || null;
+    case 'website_url':
+      return profile.website || null;
+    case 'github_url':
+      return profile.github || null;
+    case 'location':
+      return profile.location || null;
+    case 'current_title':
+      // Return the most recent job title from experience
+      if (Array.isArray(profile.experience) && profile.experience.length > 0) {
+        return profile.experience[0].title || null;
+      }
+      return null;
+    case 'current_employer':
+      if (Array.isArray(profile.experience) && profile.experience.length > 0) {
+        return profile.experience[0].company || null;
+      }
+      return null;
+    default:
+      return null;
   }
-
-  // All other topics fall through — they must come from the Q&A list
-  return null;
 }
 
 // ─── String normalization helper ──────────────────────────────────────────────
@@ -491,27 +577,66 @@ function findDeclineOption(options) {
  */
 function deterministicFieldMatcher(questionText, options, qaList, profile) {
   // ── Step 1: Detect which topic this question belongs to ───────────────────
-  // If the question text doesn't match any known topic, this module cannot
-  // help — bail out immediately so the caller routes it to AI.
   const topic = detectTopic(questionText);
   if (!topic) {
     return { matched: false, option: null, topic: null };
   }
 
+  // ── Step 1.5: Direct-value topics (text inputs, no option matching) ───────
+  // For fields like name, email, phone, URLs — return the value directly.
+  // These are text input fields, not dropdowns, so we return the value as-is.
+  const DIRECT_VALUE_TOPICS = [
+    'first_name', 'last_name', 'full_name', 'email', 'phone',
+    'linkedin_url', 'website_url', 'github_url', 'location',
+    'current_title', 'current_employer'
+  ];
+  if (DIRECT_VALUE_TOPICS.includes(topic)) {
+    let value = findQAAnswer(topic, qaList);
+    if (!value) value = findProfileAnswer(topic, profile);
+    if (value) {
+      // For direct-value fields with no dropdown options, return the value as the option
+      // If options are present (it's actually a dropdown), try to match
+      if (options && options.length > 0) {
+        const match = matchAnswerToOption(value, options, topic);
+        if (match) return { matched: true, option: match, topic };
+      } else {
+        return { matched: true, option: value, topic };
+      }
+    }
+  }
+
   // ── Step 2: Find the user's saved answer for this topic ───────────────────
-  // Try the Q&A list first (most authoritative), then fall back to any
-  // relevant field on the structured profile object.
   let savedAnswer = findQAAnswer(topic, qaList);
   if (!savedAnswer) {
     savedAnswer = findProfileAnswer(topic, profile);
   }
 
+  // ── Step 2.5: Simple yes/no topics from Q&A ─────────────────────────────
+  // For binary questions like background_check, drug_test, age_18, etc.
+  const YES_NO_TOPICS = [
+    'background_check', 'drug_test', 'drivers_license', 'age_18',
+    'relocation', 'travel'
+  ];
+  if (YES_NO_TOPICS.includes(topic) && savedAnswer && options && options.length > 0) {
+    const match = matchAnswerToOption(savedAnswer, options, topic);
+    if (match) return { matched: true, option: match, topic };
+    // Try yes/no heuristic
+    const answerLower = savedAnswer.toLowerCase().trim();
+    const isYes = /^(yes|true|1|i am|i do|i have|i will|willing)$/i.test(answerLower);
+    const isNo = /^(no|false|0|i am not|i do not|i don't|i won't|unwilling|not willing)$/i.test(answerLower);
+    if (isYes || isNo) {
+      for (const opt of options) {
+        const optLower = opt.toLowerCase();
+        if (isYes && (optLower.startsWith('yes') || optLower === 'true')) return { matched: true, option: opt, topic };
+        if (isNo && (optLower.startsWith('no') || optLower === 'false')) return { matched: true, option: opt, topic };
+      }
+    }
+  }
+
   // ── Step 3: Map the saved answer to an available option ───────────────────
-  // Only attempted when we actually have a saved answer to work from.
   if (savedAnswer) {
     const match = matchAnswerToOption(savedAnswer, options, topic);
     if (match) {
-      // Successfully matched — return immediately, no need for further steps
       return { matched: true, option: match, topic };
     }
   }

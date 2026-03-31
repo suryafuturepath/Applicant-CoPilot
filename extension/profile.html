@@ -542,6 +542,123 @@
     .test-result.success { display: block; background: #d1fae5; color: #059669; }
     .test-result.error { display: block; background: #fee2e2; color: #dc2626; }
 
+    /* Token budget controls */
+    .token-budget-row {
+      padding: 12px 0;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .token-budget-row:last-child { border-bottom: none; }
+    .token-budget-label {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin-bottom: 8px;
+    }
+    .token-budget-label strong { font-size: 13px; color: #1e293b; }
+    .token-budget-desc { font-size: 11px; color: #94a3b8; }
+    .token-budget-control {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .token-budget-control input[type="range"] {
+      flex: 1;
+      margin: 0;
+      border: none;
+      padding: 0;
+      box-shadow: none;
+    }
+    .token-budget-value {
+      font-size: 11px;
+      color: #64748b;
+      min-width: 140px;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    /* System prompt editor */
+    .prompt-section {
+      border: 1px solid #f1f5f9;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+    .prompt-section-header {
+      display: flex;
+      align-items: center;
+      padding: 10px 14px;
+      cursor: pointer;
+      background: #f8fafc;
+      transition: background 0.15s;
+      gap: 8px;
+    }
+    .prompt-section-header:hover { background: #f1f5f9; }
+    .prompt-section-arrow {
+      font-size: 10px;
+      color: #94a3b8;
+      transition: transform 0.2s;
+      flex-shrink: 0;
+    }
+    .prompt-section.open .prompt-section-arrow { transform: rotate(90deg); }
+    .prompt-section-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1e293b;
+      flex: 1;
+    }
+    .prompt-section-desc {
+      font-size: 11px;
+      color: #94a3b8;
+      display: none;
+    }
+    .prompt-section-badge {
+      font-size: 10px;
+      font-weight: 600;
+      color: #f59e0b;
+      background: #fef3c7;
+      padding: 2px 6px;
+      border-radius: 4px;
+      display: none;
+    }
+    .prompt-section-badge.visible { display: inline-block; }
+    .prompt-section-body {
+      display: none;
+      padding: 0 14px 14px;
+    }
+    .prompt-section.open .prompt-section-body { display: block; }
+    .prompt-section.open .prompt-section-desc { display: block; margin-bottom: 8px; }
+    .prompt-textarea {
+      width: 100%;
+      min-height: 120px;
+      max-height: 400px;
+      padding: 10px 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      color: #1e293b;
+      resize: vertical;
+      background: #fff;
+    }
+    .prompt-textarea:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+    .prompt-section-footer {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 6px;
+    }
+    .prompt-reset-btn {
+      background: none;
+      border: none;
+      font-size: 11px;
+      color: #94a3b8;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-family: inherit;
+    }
+    .prompt-reset-btn:hover { color: #ef4444; background: #fef2f2; }
+
     .toast {
       position: fixed;
       bottom: 24px;
@@ -884,6 +1001,64 @@
         <button class="btn btn-primary" id="testConnBtn">Test Connection</button>
         <button class="btn btn-secondary" id="saveSettingsBtn" style="margin-left:8px;">Save Settings</button>
         <div class="test-result" id="testResult"></div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h2>Response Length</h2>
+        <p style="font-size:12px;color:#64748b;margin-bottom:16px;">Control how much the AI generates per operation. Higher = more detailed but uses more tokens.</p>
+
+        <div class="token-budget-row">
+          <div class="token-budget-label">
+            <strong>Resume Generation</strong>
+            <span class="token-budget-desc">Your most important document — keep this high</span>
+          </div>
+          <div class="token-budget-control">
+            <input type="range" id="sBudgetResume" min="2048" max="16384" step="1024" value="8192">
+            <span class="token-budget-value" id="sBudgetResumeVal">8192 tokens (~6000 words)</span>
+          </div>
+        </div>
+
+        <div class="token-budget-row">
+          <div class="token-budget-label">
+            <strong>Job Analysis</strong>
+            <span class="token-budget-desc">Match score, skills, recommendations</span>
+          </div>
+          <div class="token-budget-control">
+            <input type="range" id="sBudgetAnalysis" min="1024" max="8192" step="512" value="4096">
+            <span class="token-budget-value" id="sBudgetAnalysisVal">4096 tokens (~3000 words)</span>
+          </div>
+        </div>
+
+        <div class="token-budget-row">
+          <div class="token-budget-label">
+            <strong>Cover Letter</strong>
+            <span class="token-budget-desc">4-paragraph tailored letter</span>
+          </div>
+          <div class="token-budget-control">
+            <input type="range" id="sBudgetCoverLetter" min="512" max="4096" step="256" value="2048">
+            <span class="token-budget-value" id="sBudgetCoverLetterVal">2048 tokens (~1500 words)</span>
+          </div>
+        </div>
+
+        <div class="token-budget-row">
+          <div class="token-budget-label">
+            <strong>Ask AI Chat</strong>
+            <span class="token-budget-desc">Per-message response length</span>
+          </div>
+          <div class="token-budget-control">
+            <input type="range" id="sBudgetChat" min="256" max="2048" step="128" value="1024">
+            <span class="token-budget-value" id="sBudgetChatVal">1024 tokens (~750 words)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+          <h2 style="margin:0;">System Prompts</h2>
+          <button class="btn btn-secondary btn-sm" id="resetAllPromptsBtn" style="font-size:11px;">Reset All</button>
+        </div>
+        <p style="font-size:12px;color:#64748b;margin-bottom:12px;">Customize the AI instructions for each operation. Edit, save, and test. Reset to defaults anytime.</p>
+        <div id="promptSections"></div>
       </div>
     </div>
   </div>

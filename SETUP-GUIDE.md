@@ -139,26 +139,37 @@ All tables have **Row Level Security (RLS)** — users can only see their own da
 
 ---
 
-## 5. Get a Gemini API Key
+## 5. Get LLM API Keys
 
-The AI features use Google's Gemini Flash (free tier).
+The backend Edge Function uses **Groq** (primary, free tier) with **Gemini Flash** as fallback.
+
+### A. Groq API Key (Primary — recommended)
+
+1. Go to https://console.groq.com/keys
+2. Sign up / sign in
+3. Click **"Create API Key"**
+4. Copy the key
+
+```bash
+supabase secrets set GROQ_API_KEY="<YOUR_GROQ_API_KEY>"
+```
+
+### B. Gemini API Key (Fallback — optional but recommended)
 
 1. Go to https://aistudio.google.com/apikey
 2. Click **"Create API Key"**
 3. Select your Google Cloud project (or create one)
 4. Copy the API key
 
-Set it as a Supabase secret (used by the Edge Function):
-
 ```bash
 supabase secrets set GEMINI_API_KEY="<YOUR_GEMINI_API_KEY>"
 ```
 
-Verify:
+Verify both are set:
 ```bash
 supabase secrets list
 ```
-Should show `GEMINI_API_KEY` in the list.
+Should show `GROQ_API_KEY` and optionally `GEMINI_API_KEY` in the list.
 
 ---
 
@@ -396,8 +407,8 @@ Supabase Project (cloud)
   ├── Auth: Google OAuth provider enabled
   ├── Database: 5 tables with RLS
   ├── Storage: "resumes" bucket (private)
-  ├── Edge Function: generate-answer (Gemini Flash)
-  └── Secret: GEMINI_API_KEY
+  ├── Edge Function: generate-answer (Groq primary → Gemini fallback)
+  └── Secrets: GROQ_API_KEY, GEMINI_API_KEY
 
 Google Cloud Project
   ├── OAuth consent screen (Testing mode)
@@ -423,6 +434,7 @@ supabase link --project-ref <REF>
 supabase db push
 
 # Set secrets
+supabase secrets set GROQ_API_KEY="<key>"
 supabase secrets set GEMINI_API_KEY="<key>"
 
 # Deploy edge function
