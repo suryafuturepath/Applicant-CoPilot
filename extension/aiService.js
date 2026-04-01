@@ -1432,18 +1432,7 @@ function buildInterviewQuestionsPrompt(profile, jdDigest, analysis, categories, 
   const cats = categories || ['behavioral', 'technical', 'situational', 'role-specific'];
   const catList = cats.join(', ');
 
-  const instructions = promptOverride || `You are a senior interview coach preparing a candidate for a specific role.
-Generate practice interview questions tailored to this exact role and candidate.
-
-CATEGORIES TO INCLUDE: ${catList}
-Generate 10-12 questions total distributed across the requested categories:
-- behavioral (3): STAR-method questions targeting skills relevant to this role. Reference the candidate's actual experience to make questions realistic.
-- technical (3): Based on the tech stack, key requirements, and domain knowledge. Calibrate difficulty to the seniority level (${jdDigest?.seniority || 'mid'}).
-- situational (2-3): "What would you do if..." scenarios reflecting real challenges in this role/industry.
-- role-specific (2-3): Questions a hiring manager for THIS role at THIS company would likely ask, based on responsibilities and culture signals.
-
-For each question include 3-4 key points that a strong answer should cover.
-Assign a time limit in seconds: behavioral=120, technical=150, situational=120, role-specific=90.
+  const jsonFormat = `
 
 CRITICAL: Return ONLY valid JSON. No markdown fences. No explanation.
 {
@@ -1457,6 +1446,22 @@ CRITICAL: Return ONLY valid JSON. No markdown fences. No explanation.
     }
   ]
 }`;
+
+  const defaultPrompt = `You are a senior interview coach preparing a candidate for a specific role.
+Generate practice interview questions tailored to this exact role and candidate.
+
+CATEGORIES TO INCLUDE: ${catList}
+Generate 10-12 questions total distributed across the requested categories:
+- behavioral (3): STAR-method questions targeting skills relevant to this role. Reference the candidate's actual experience to make questions realistic.
+- technical (3): Based on the tech stack, key requirements, and domain knowledge. Calibrate difficulty to the seniority level (${jdDigest?.seniority || 'mid'}).
+- situational (2-3): "What would you do if..." scenarios reflecting real challenges in this role/industry.
+- role-specific (2-3): Questions a hiring manager for THIS role at THIS company would likely ask, based on responsibilities and culture signals.
+
+For each question include 3-4 key points that a strong answer should cover.
+Assign a time limit in seconds: behavioral=120, technical=150, situational=120, role-specific=90.`;
+
+  // Always append JSON format spec — even with custom prompts the AI must return structured JSON
+  const instructions = (promptOverride || defaultPrompt) + jsonFormat;
 
   const userContent = [
     `${instructions}`,

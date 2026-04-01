@@ -2915,7 +2915,17 @@
 
     } catch (err) {
       console.error('[prep] Question generation failed:', err);
+      const errMsg = err?.message || String(err);
       if (btn) btn.textContent = 'Error - Retry';
+      // Show error detail below the button
+      let errDiv = shadowRoot?.getElementById('jmPrepError');
+      if (!errDiv) {
+        errDiv = document.createElement('div');
+        errDiv.id = 'jmPrepError';
+        errDiv.style.cssText = 'color:#dc2626;font-size:12px;padding:10px;background:#fef2f2;border-radius:8px;margin-top:10px;line-height:1.4';
+        btn?.parentNode?.appendChild(errDiv);
+      }
+      errDiv.textContent = errMsg;
     } finally {
       if (btn) { btn.disabled = false; if (btn.textContent === 'Generating questions...') btn.textContent = 'Generate Questions'; }
     }
@@ -3297,7 +3307,37 @@
    *
    * @returns {string} The extracted job description text.
    */
-  function extractJobDescription() {
+  /**
+   * Clicks "Show more" / expand buttons on platforms that truncate the JD.
+   * Must be called before extraction so the full text is in the DOM.
+   */
+  async function expandTruncatedContent() {
+    const expandSelectors = [
+      // LinkedIn "Show more" on JD
+      '.jobs-description__content .show-more-less-html__button--more',
+      'button[aria-label="Click to see more description"]',
+      '.show-more-less-html__button--more',
+      // Workday expand
+      'button[data-automation-id="Show More"]',
+      // Indeed
+      '#jobDescriptionText .viewMoreButton',
+      '.jobsearch-ViewJobButtons-showMoreButton',
+    ];
+    for (const sel of expandSelectors) {
+      try {
+        const btn = document.querySelector(sel);
+        if (btn && btn.offsetParent !== null) {
+          btn.click();
+          await new Promise(r => setTimeout(r, 500));
+        }
+      } catch (_) {}
+    }
+  }
+
+  async function extractJobDescription() {
+    // Expand truncated content before extracting
+    await expandTruncatedContent();
+
     // ── Stage 1: Platform selectors (P0/P1 — covers ~90% of usage) ──────
     const PLATFORM_SELECTORS = [
       // LinkedIn (P0) — multiple variants for different LinkedIn layouts
@@ -3538,7 +3578,7 @@
     let analysisSucceeded = false;
 
     try {
-      const jd = extractJobDescription();
+      const jd = await extractJobDescription();
       const title = extractJobTitle();
       const company = extractCompany();
       const location = extractLocation();
@@ -3731,7 +3771,7 @@
           salary: currentAnalysis.salary || '',
           score: currentAnalysis.matchScore,
           url: currentAnalysis.url,
-          analysis: currentAnalysis
+          analysis: currentAnalysis,
         }
       });
       // Update button to "Saved" state
@@ -5207,7 +5247,7 @@
     btn.innerHTML = '<span class="jm-spinner"></span> Writing...';
     try {
       if (!currentAnalysis) throw new Error('Analyze the job first.');
-      const jd = extractJobDescription();
+      const jd = await extractJobDescription();
       const clResult = await sendMessage({
         type: 'GENERATE_COVER_LETTER',
         jobDescription: jd,
@@ -5268,7 +5308,7 @@
 
     try {
       if (!currentAnalysis) throw new Error('Analyze the job first.');
-      const jd = extractJobDescription();
+      const jd = await extractJobDescription();
       const instructions = shadowRoot.getElementById('jmResumeInstructions').value.trim();
 
       const result = await sendMessage({

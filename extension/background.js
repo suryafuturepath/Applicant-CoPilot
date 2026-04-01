@@ -314,7 +314,7 @@ async function getSettings() {
     model: DEFAULT_MODEL,
     temperature: DEFAULT_TEMPERATURE,
     useBackend: true,
-    tokenBudgets: { resume: 8192, analysis: 4096, coverLetter: 2048, chat: 1024, interviewPrep: 2048 }
+    tokenBudgets: { resume: 8192, analysis: 4096, coverLetter: 2048, chat: 1024, interviewPrep: 4096 }
   };
   const saved = result.aiSettings || {};
   // Merge so that tokenBudgets defaults are always present
@@ -1136,6 +1136,7 @@ async function handleSaveJob(jobData) {
     url: jobData.url || '',
     date: new Date().toISOString().split('T')[0], // Store date only (YYYY-MM-DD), not time
     analysis: jobData.analysis || null,            // Full analysis blob; may be null for quick-saves
+    jdDigest: jobData.analysis?.jdDigest || null,  // Structured digest (~500 tokens) for interview prep
     applied: false                                  // Whether the user has applied to this job
   };
   // Prepend so the UI shows the most recently saved job at the top
@@ -1694,20 +1695,25 @@ async function handleGenerateInterviewQuestions(jobId, jobUrl, categories) {
   const slicedProfile = sliceProfileForOperation(profile, 'interview_prep');
   const enrichedProfile = await enrichProfileWithContext(slicedProfile);
 
-  // Load JD digest
-  let jdDigest = null;
-  if (jobUrl) {
-    try { jdDigest = await getCachedDigest(jobUrl); } catch (_) {}
-  }
-
-  // Load saved job analysis
-  let analysis = null;
+  // Load saved job and its analysis
   const savedJobs = await getSavedJobs();
   const savedJob = savedJobs.find(j => j.id === jobId);
-  if (savedJob?.analysis) analysis = savedJob.analysis;
+  let analysis = savedJob?.analysis || null;
+
+  // Try to load JD digest — check both the passed URL and the saved job's URL
+  let jdDigest = null;
+  const digestUrl = jobUrl || savedJob?.url;
+  if (digestUrl) {
+    try { jdDigest = await getCachedDigest(digestUrl); } catch (_) {}
+  }
+
+  // Fallback: stored digest on saved job (never expires)
+  if (!jdDigest) {
+    jdDigest = savedJob?.jdDigest || savedJob?.analysis?.jdDigest || null;
+  }
 
   if (!jdDigest && !analysis) {
-    throw new Error('No job data available. Please analyze this job first.');
+    throw new Error('No job data available. Please analyze this job first from the Home tab, then try Interview Prep again.');
   }
 
   const prompts = await getCustomPrompts();
@@ -1755,6 +1761,7 @@ async function handleGenerateInterviewQuestions(jobId, jobUrl, categories) {
   }
 
   if (!questionsData || !questionsData.questions || questionsData.questions.length === 0) {
+    console.error('[interview-prep] Failed to parse questions. questionsData:', JSON.stringify(questionsData)?.substring(0, 500));
     throw new Error('AI did not return any questions. Try again or adjust your Interview Prep prompt in Settings.');
   }
 
@@ -1799,6 +1806,12 @@ async function handleEvaluateAnswer(jobId, questionId, question, userAnswer, cat
   let jdDigest = null;
   if (session.jobUrl) {
     try { jdDigest = await getCachedDigest(session.jobUrl); } catch (_) {}
+  }
+  // Fallback: stored digest on saved job
+  if (!jdDigest) {
+    const savedJobs = await getSavedJobs();
+    const savedJob = savedJobs.find(j => j.id === jobId);
+    jdDigest = savedJob?.jdDigest || savedJob?.analysis?.jdDigest || null;
   }
 
   const prompts = await getCustomPrompts();
@@ -1883,6 +1896,12 @@ async function handleGenerateFollowUp(jobId, parentQuestionId, question, userAns
   let jdDigest = null;
   if (session.jobUrl) {
     try { jdDigest = await getCachedDigest(session.jobUrl); } catch (_) {}
+  }
+  // Fallback: stored digest on saved job
+  if (!jdDigest) {
+    const savedJobs = await getSavedJobs();
+    const savedJob = savedJobs.find(j => j.id === jobId);
+    jdDigest = savedJob?.jdDigest || savedJob?.analysis?.jdDigest || null;
   }
 
   const prompts = await getCustomPrompts();
@@ -1973,6 +1992,11 @@ async function handleGeneratePositioningAdvice(jobId) {
   const savedJobs = await getSavedJobs();
   const savedJob = savedJobs.find(j => j.id === jobId);
   if (savedJob?.analysis) analysis = savedJob.analysis;
+
+  // Fallback: stored digest on saved job
+  if (!jdDigest) {
+    jdDigest = savedJob?.jdDigest || analysis?.jdDigest || null;
+  }
 
   // Build session summary for the prompt
   const sessionSummary = {
