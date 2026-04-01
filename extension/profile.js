@@ -1461,28 +1461,69 @@ document.getElementById('toggleKeyBtn').addEventListener('click', () => {
 
 /**
  * "Test Connection" button handler.
- * Saves settings first (so the background uses the latest values), then sends a
- * TEST_CONNECTION message and displays the result inline.
+ * Runs a 4-layer diagnostic: settings → auth → Edge Function → local AI.
+ * Displays structured results so the user can immediately see what's broken.
  */
 document.getElementById('testConnBtn').addEventListener('click', async () => {
   const resultEl = document.getElementById('testResult');
-  // Reset to hidden/neutral state before the new attempt
   resultEl.className    = 'test-result';
   resultEl.style.display = 'none';
 
-  // Always save before testing so the background has the current key/model
   await saveSettings();
 
   try {
-    resultEl.textContent   = 'Testing connection...';
+    resultEl.innerHTML     = 'Running 4-layer diagnostic...';
     resultEl.className     = 'test-result loading';
     resultEl.style.display = 'block';
 
-    const data = await sendMessage({ type: 'TEST_CONNECTION' });
-    resultEl.textContent = 'Connection successful!';
-    resultEl.className   = 'test-result success';
+    const diag = await sendMessage({ type: 'TEST_CONNECTION' });
+    const layers = diag?.layers || {};
+
+    const icon = (status) => status === 'ok' ? '✅' : status === 'warn' ? '⚠️' : status === 'skipped' ? '⏭️' : '❌';
+
+    let html = `<div style="font-family:monospace;font-size:12px;line-height:1.6">`;
+    html += `<strong>Diagnostic Results</strong> <span style="color:#888">${diag.timestamp || ''}</span><br>`;
+
+    // Settings
+    const s = layers.settings || {};
+    html += `${icon(s.status)} <strong>Settings:</strong> useBackend=${s.useBackend}, apiKey=${s.hasApiKey ? 'set' : 'NOT SET'}, provider=${s.provider}<br>`;
+
+    // Auth
+    const a = layers.auth || {};
+    if (a.signedIn) {
+      html += `${icon(a.status)} <strong>Auth:</strong> signed in as ${a.userEmail}, token ${a.isExpired ? '<span style="color:red">EXPIRED</span>' : 'valid'} (expires ${a.expiresAt})<br>`;
+    } else {
+      html += `${icon(a.status)} <strong>Auth:</strong> ${a.detail || 'not signed in'}<br>`;
+    }
+
+    // Edge Function
+    const e = layers.edgeFunction || {};
+    if (e.status === 'ok') {
+      html += `${icon(e.status)} <strong>Edge Function:</strong> ${e.latencyMs}ms, model=${e.model}, cached=${e.cached}<br>`;
+    } else if (e.status === 'error') {
+      html += `${icon(e.status)} <strong>Edge Function:</strong> <span style="color:red">${e.error}</span><br>`;
+    } else {
+      html += `${icon(e.status)} <strong>Edge Function:</strong> ${e.reason}<br>`;
+    }
+
+    // Local AI
+    const l = layers.localAI || {};
+    if (l.status === 'ok') {
+      html += `${icon(l.status)} <strong>Local AI:</strong> working<br>`;
+    } else if (l.status === 'error') {
+      html += `${icon(l.status)} <strong>Local AI:</strong> <span style="color:red">${l.error}</span><br>`;
+    } else {
+      html += `${icon(l.status)} <strong>Local AI:</strong> ${l.reason}<br>`;
+    }
+
+    html += `</div>`;
+
+    // Overall status
+    const hasError = Object.values(layers).some(l => l.status === 'error');
+    resultEl.innerHTML = html;
+    resultEl.className = hasError ? 'test-result error' : 'test-result success';
   } catch (err) {
-    resultEl.textContent = 'Connection failed: ' + err.message;
+    resultEl.textContent = 'Diagnostic failed: ' + err.message;
     resultEl.className   = 'test-result error';
   }
 });
@@ -1505,6 +1546,7 @@ async function saveSettings() {
     apiKey:      document.getElementById('sApiKey').value.trim(),
     model:       document.getElementById('sModel').value,
     temperature: parseFloat(document.getElementById('sTemp').value),
+    useBackend:  document.getElementById('sUseBackend').checked,
     tokenBudgets: {
       resume:      parseInt(document.getElementById('sBudgetResume').value, 10),
       analysis:    parseInt(document.getElementById('sBudgetAnalysis').value, 10),
@@ -1715,6 +1757,7 @@ async function init() {
       // updateProviderUI must run after the provider is set so the model list is correct
       updateProviderUI(settings.provider || 'anthropic');
       document.getElementById('sApiKey').value  = settings.apiKey || '';
+      document.getElementById('sUseBackend').checked = settings.useBackend !== false;
       document.getElementById('sModel').value   = settings.model  || 'claude-sonnet-4-20250514';
       // Nullish coalescing: treat null/undefined as 0.3, but allow stored 0
       document.getElementById('sTemp').value    = settings.temperature ?? 0.3;
@@ -2122,6 +2165,206 @@ async function renderStats() {
   }
 }
 
+// ─── Interview Prep Full-Page Report ──────────────────────────────────────────
+
+async function renderInterviewPrepReport(jobId) {
+  // Hide the normal profile UI and show report
+  document.querySelector('.container').style.display = 'none';
+
+  // Create report container if not exists
+  let reportEl = document.getElementById('interviewPrepReport');
+  if (!reportEl) {
+    reportEl = document.createElement('div');
+    reportEl.id = 'interviewPrepReport';
+    document.body.appendChild(reportEl);
+  }
+
+  reportEl.innerHTML = '<p style="text-align:center;padding:40px;color:var(--ac-text-secondary);">Loading report...</p>';
+
+  try {
+    const result = await chrome.storage.local.get('interviewPrepSessions');
+    const sessions = result.interviewPrepSessions || {};
+    const session = sessions[jobId];
+    if (!session) {
+      reportEl.innerHTML = '<p style="text-align:center;padding:40px;color:#dc2626;">Session not found. Complete an interview prep session first.</p>';
+      return;
+    }
+
+    const analytics = session.analytics || {};
+    const answered = session.questions.filter(q => q.evaluation);
+
+    // Score color helper
+    const scoreColor = (s) => s >= 70 ? '#22c55e' : s >= 40 ? '#f59e0b' : '#ef4444';
+    const qScoreColor = (s) => s >= 7 ? '#22c55e' : s >= 4 ? '#f59e0b' : '#ef4444';
+
+    let html = `
+      <style>
+        #interviewPrepReport {
+          max-width: 800px; margin: 0 auto; padding: 24px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          color: var(--ac-text); background: var(--ac-bg);
+        }
+        .ipr-action-bar {
+          position: sticky; top: 0; z-index: 10; background: var(--ac-bg);
+          padding: 12px 0; border-bottom: 1px solid var(--ac-border);
+          display: flex; gap: 8px; justify-content: flex-end;
+        }
+        .ipr-action-btn {
+          padding: 6px 16px; border-radius: 6px; border: 1px solid var(--ac-border);
+          cursor: pointer; font-size: 13px; background: var(--ac-card-bg); color: var(--ac-text);
+        }
+        .ipr-action-btn.primary { background: var(--ac-primary); color: #fff; border: none; }
+        .ipr-action-btn:hover { opacity: 0.85; }
+        .ipr-header { text-align: center; margin: 24px 0; }
+        .ipr-header h1 { font-size: 22px; margin-bottom: 4px; }
+        .ipr-header p { color: var(--ac-text-secondary); font-size: 14px; }
+        .ipr-readiness { text-align: center; margin: 20px 0; }
+        .ipr-readiness-circle {
+          width: 90px; height: 90px; border-radius: 50%; display: inline-flex;
+          align-items: center; justify-content: center; font-size: 30px; font-weight: 700; color: #fff;
+        }
+        .ipr-section { margin: 24px 0; }
+        .ipr-section h2 { font-size: 16px; border-bottom: 2px solid var(--ac-primary); padding-bottom: 6px; margin-bottom: 12px; }
+        .ipr-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .ipr-bar-label { width: 100px; font-size: 13px; color: var(--ac-text-secondary); }
+        .ipr-bar-track { flex: 1; height: 12px; background: var(--ac-border); border-radius: 6px; overflow: hidden; }
+        .ipr-bar-fill { height: 100%; border-radius: 6px; }
+        .ipr-bar-value { width: 40px; text-align: right; font-size: 13px; font-weight: 600; }
+        .ipr-q-card {
+          background: var(--ac-card-bg); border: 1px solid var(--ac-border);
+          border-radius: 8px; padding: 16px; margin-bottom: 12px;
+        }
+        .ipr-q-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .ipr-q-pill { padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; text-transform: uppercase; }
+        .ipr-q-score { margin-left: auto; font-size: 14px; font-weight: 700; color: #fff; padding: 2px 10px; border-radius: 4px; }
+        .ipr-q-question { font-size: 14px; font-weight: 500; margin-bottom: 8px; }
+        .ipr-q-answer-label { font-size: 11px; font-weight: 600; color: var(--ac-text-muted); text-transform: uppercase; margin-bottom: 4px; }
+        .ipr-q-answer { font-size: 13px; color: var(--ac-text-secondary); line-height: 1.5; white-space: pre-wrap; margin-bottom: 8px; padding: 8px; background: var(--ac-bg); border-radius: 4px; }
+        .ipr-advice { white-space: pre-wrap; font-size: 14px; line-height: 1.7; color: var(--ac-text-secondary); }
+        .ipr-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+        .ipr-stat { text-align: center; padding: 12px; background: var(--ac-card-bg); border-radius: 8px; border: 1px solid var(--ac-border); }
+        .ipr-stat-value { font-size: 20px; font-weight: 700; color: var(--ac-text); }
+        .ipr-stat-label { font-size: 11px; color: var(--ac-text-muted); }
+        @media print {
+          .ipr-action-bar { display: none !important; }
+          #interviewPrepReport { padding: 0; }
+        }
+      </style>
+
+      <div class="ipr-action-bar">
+        <button class="ipr-action-btn" id="iprCopySummary">Copy Summary</button>
+        <button class="ipr-action-btn primary" id="iprPrint">Print Report</button>
+      </div>
+
+      <div class="ipr-header">
+        <h1>${escapeHTML(session.jobTitle)}</h1>
+        <p>${escapeHTML(session.company)} &middot; ${new Date(session.createdAt).toLocaleDateString()}</p>
+      </div>
+
+      <div class="ipr-readiness">
+        <div class="ipr-readiness-circle" style="background:${scoreColor(analytics.overallReadiness || 0)}">
+          ${analytics.overallReadiness || 0}%
+        </div>
+        <p style="margin-top:8px;color:var(--ac-text-secondary);font-size:13px;">Interview Readiness Score</p>
+      </div>
+
+      <div class="ipr-stats">
+        <div class="ipr-stat"><div class="ipr-stat-value">${analytics.questionsAnswered || 0}/${analytics.questionsTotal || 0}</div><div class="ipr-stat-label">Questions Answered</div></div>
+        <div class="ipr-stat"><div class="ipr-stat-value">${analytics.avgTimePerAnswer ? analytics.avgTimePerAnswer + 's' : '--'}</div><div class="ipr-stat-label">Avg. Time</div></div>
+        <div class="ipr-stat"><div class="ipr-stat-value">${analytics.followUpsGenerated || 0}</div><div class="ipr-stat-label">Follow-ups</div></div>
+      </div>
+    `;
+
+    // Category breakdown
+    const cats = [
+      { key: 'behavioral', label: 'Behavioral', color: '#3b82f6' },
+      { key: 'technical', label: 'Technical', color: '#8b5cf6' },
+      { key: 'situational', label: 'Situational', color: '#f97316' },
+      { key: 'role-specific', label: 'Role-Specific', color: '#22c55e' },
+    ];
+    html += '<div class="ipr-section"><h2>Category Scores</h2>';
+    cats.forEach(cat => {
+      const val = analytics.categoryScores?.[cat.key];
+      html += `<div class="ipr-bar-row">
+        <span class="ipr-bar-label">${cat.label}</span>
+        <div class="ipr-bar-track"><div class="ipr-bar-fill" style="width:${val || 0}%;background:${cat.color}"></div></div>
+        <span class="ipr-bar-value">${val != null ? val + '%' : '--'}</span>
+      </div>`;
+    });
+    html += '</div>';
+
+    // Question-by-question review
+    html += '<div class="ipr-section"><h2>Question-by-Question Review</h2>';
+    answered.forEach(q => {
+      const pillColors = { behavioral: '#dbeafe;color:#1d4ed8', technical: '#ede9fe;color:#6d28d9', situational: '#ffedd5;color:#c2410c', 'role-specific': '#dcfce7;color:#15803d' };
+      html += `<div class="ipr-q-card">
+        <div class="ipr-q-header">
+          <span class="ipr-q-pill" style="background:${(pillColors[q.category] || '#dbeafe;color:#1d4ed8').split(';')[0]};${(pillColors[q.category] || '').split(';')[1] || ''}">${escapeHTML(q.category)}</span>
+          <span style="font-size:11px;color:var(--ac-text-muted)">${q.difficulty} &middot; ${q.timeSpentSec || 0}s</span>
+          <span class="ipr-q-score" style="background:${qScoreColor(q.evaluation.score)}">${q.evaluation.score}/10</span>
+        </div>
+        <div class="ipr-q-question">${escapeHTML(q.question)}</div>
+        <div class="ipr-q-answer-label">Your Answer</div>
+        <div class="ipr-q-answer">${escapeHTML(q.userAnswer || '')}</div>
+        <div class="ipr-q-answer-label">Sample Answer</div>
+        <div class="ipr-q-answer">${escapeHTML(q.evaluation.sampleAnswer || '')}</div>
+      </div>`;
+    });
+    html += '</div>';
+
+    // Weak areas
+    if (analytics.weakAreas?.length > 0) {
+      html += '<div class="ipr-section"><h2>Areas to Focus On</h2><ul>';
+      analytics.weakAreas.forEach(w => { html += `<li style="margin-bottom:4px;color:var(--ac-text-secondary)">${escapeHTML(w)}</li>`; });
+      html += '</ul></div>';
+    }
+
+    // Positioning advice
+    if (analytics.positioningAdvice) {
+      html += `<div class="ipr-section"><h2>Positioning Strategy</h2><div class="ipr-advice">${escapeHTML(analytics.positioningAdvice)}</div></div>`;
+    }
+
+    // Time analysis
+    if (answered.length > 0) {
+      html += '<div class="ipr-section"><h2>Time Analysis</h2>';
+      cats.forEach(cat => {
+        const catQs = answered.filter(q => q.category === cat.key && q.timeSpentSec != null);
+        if (catQs.length > 0) {
+          const avg = Math.round(catQs.reduce((s, q) => s + q.timeSpentSec, 0) / catQs.length);
+          const avgLimit = Math.round(catQs.reduce((s, q) => s + (q.timeLimitSec || 120), 0) / catQs.length);
+          html += `<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;">
+            <span>${cat.label}</span><span style="font-weight:600">${avg}s avg (${avgLimit}s limit)</span>
+          </div>`;
+        }
+      });
+      html += '</div>';
+    }
+
+    reportEl.innerHTML = html;
+
+    // Wire buttons
+    document.getElementById('iprPrint')?.addEventListener('click', () => window.print());
+    document.getElementById('iprCopySummary')?.addEventListener('click', () => {
+      const summary = [
+        `Interview Prep Report: ${session.jobTitle} at ${session.company}`,
+        `Readiness: ${analytics.overallReadiness}%`,
+        `Questions: ${analytics.questionsAnswered}/${analytics.questionsTotal}`,
+        `Avg Time: ${analytics.avgTimePerAnswer || '--'}s`,
+        '',
+        ...cats.map(c => `${c.label}: ${analytics.categoryScores?.[c.key] ?? '--'}%`),
+        '',
+        analytics.weakAreas?.length ? 'Weak Areas:\n' + analytics.weakAreas.map(w => '- ' + w).join('\n') : '',
+      ].filter(Boolean).join('\n');
+      navigator.clipboard.writeText(summary).then(() => {
+        const btn = document.getElementById('iprCopySummary');
+        if (btn) { btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = 'Copy Summary'; }, 1500); }
+      });
+    });
+
+  } catch (err) {
+    reportEl.innerHTML = `<p style="text-align:center;padding:40px;color:#dc2626;">Error: ${escapeHTML(err.message)}</p>`;
+  }
+}
+
 // ─── Hash navigation ──────────────────────────────────────────────────────────
 
 /**
@@ -2132,6 +2375,15 @@ async function renderStats() {
  */
 function handleHash() {
   const hash      = window.location.hash.replace('#', '');
+
+  // Interview Prep full-page report route
+  if (hash.startsWith('interview-prep-report')) {
+    const params = new URLSearchParams(hash.split('&').slice(1).join('&'));
+    const jobId = params.get('jobId');
+    if (jobId) renderInterviewPrepReport(jobId);
+    return;
+  }
+
   const validTabs = ['profile', 'qa', 'applied', 'stats', 'settings'];
   if (validTabs.includes(hash)) {
     // Deactivate all tabs and panels first

@@ -967,6 +967,17 @@
         <strong>Backend connected</strong> — AI calls go through Applicant Copilot servers. No API key needed.
         <div style="margin-top:4px;opacity:0.85;font-size:11px;">Powered by Gemini Flash (free tier). Usage logged for analytics.</div>
       </div>
+      <div class="card" style="margin-bottom:12px;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;">
+          <input type="checkbox" id="sUseBackend" checked style="accent-color:var(--ac-primary);width:16px;height:16px;">
+          <span style="font-weight:600;">Use Backend AI</span>
+          <span style="font-size:11px;color:var(--ac-text-muted);font-weight:400;">— routes AI calls through Supabase Edge Function (OpenRouter/Groq/Gemini)</span>
+        </label>
+        <div style="font-size:11px;color:var(--ac-text-muted);margin-top:6px;padding-left:24px;">
+          When off, all AI calls use your local provider &amp; API key below. No backend needed.
+        </div>
+      </div>
+
       <div class="card">
         <h2>AI Configuration</h2>
 
@@ -1000,7 +1011,7 @@
 
         <button class="btn btn-primary" id="testConnBtn">Test Connection</button>
         <button class="btn btn-secondary" id="saveSettingsBtn" style="margin-left:8px;">Save Settings</button>
-        <div class="test-result" id="testResult"></div>
+        <div class="test-result" id="testResult" style="white-space:pre-wrap;max-height:300px;overflow-y:auto"></div>
       </div>
 
       <div class="card" style="margin-top:16px;">

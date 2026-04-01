@@ -14,7 +14,7 @@ import { createClient } from './libs/supabase-bundle.js';
 // ─── Config (public — safe to ship in extension) ─────────────────────────────
 
 export const SUPABASE_URL = 'https://oeeatotpwtftmvlydgsg.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_7y8gnIiUPWgXZWDPIaa6fA_7BuPEfzT'; // TODO: Paste your anon key here after project setup
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lZWF0b3Rwd3RmdG12bHlkZ3NnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1MDkxNDIsImV4cCI6MjA5MDA4NTE0Mn0.RX8yGv35gjIEVJ0a4TCKmd0PGEcD5cNEIMXUDPs28qI';
 
 // ─── Storage keys ─────────────────────────────────────────────────────────────
 
@@ -84,7 +84,29 @@ export async function restoreSession() {
  * Get the current session (in-memory or from storage).
  */
 export async function getSession() {
-  if (_currentSession) return _currentSession;
+  if (_currentSession) {
+    // Check if token is expired or about to expire (within 120s buffer)
+    const expiresAt = _currentSession.expires_at;
+    const now = Math.floor(Date.now() / 1000);
+    if (expiresAt && expiresAt < now + 120) {
+      console.log('[supabase-client] Token expiring/expired, refreshing...');
+      // Try explicit refresh first
+      try {
+        const client = getClient();
+        if (client) {
+          const { data, error } = await client.auth.refreshSession();
+          if (!error && data.session) {
+            _currentSession = data.session;
+            chrome.storage.local.set({ [SESSION_KEY]: data.session });
+            return data.session;
+          }
+        }
+      } catch (_) {}
+      // Fallback: restore from storage
+      return restoreSession();
+    }
+    return _currentSession;
+  }
   return restoreSession();
 }
 
@@ -188,6 +210,9 @@ export async function callEdgeFunction(functionName, body) {
     throw new Error('Not signed in. Please sign in to use this feature.');
   }
 
+  console.log('[EDGE][callEdgeFunction] Fetching:', `${SUPABASE_URL}/functions/v1/${functionName}`, 'action:', body?.action_type || 'default');
+  console.log('[EDGE][callEdgeFunction] Token preview:', session.access_token?.substring(0, 30) + '...', 'expires_at:', session.expires_at);
+
   const response = await fetch(
     `${SUPABASE_URL}/functions/v1/${functionName}`,
     {
@@ -201,13 +226,31 @@ export async function callEdgeFunction(functionName, body) {
     }
   );
 
-  const data = await response.json();
+  console.log('[EDGE][callEdgeFunction] Response status:', response.status);
 
+  // Check status FIRST, then parse — response might not be JSON (e.g. HTML error page)
   if (!response.ok) {
-    throw new Error(data.error || `Edge function error: ${response.status}`);
+    const text = await response.text();
+    let errorMsg;
+    try {
+      const errData = JSON.parse(text);
+      errorMsg = errData.error || errData.message || `Edge function error: ${response.status}`;
+      // Include provider-level errors if the Edge Function reported them
+      if (errData.provider_errors && Array.isArray(errData.provider_errors)) {
+        const providerDetail = errData.provider_errors.map(
+          e => `${e.provider}(${e.status || 'err'}): ${(e.error || '').substring(0, 80)}`
+        ).join('; ');
+        errorMsg += ` | Providers: ${providerDetail}`;
+        console.warn('[EDGE][callEdgeFunction] Provider errors:', errData.provider_errors);
+      }
+    } catch (_) {
+      errorMsg = `Edge function error: ${response.status} — ${text.substring(0, 150)}`;
+    }
+    console.error('[EDGE][callEdgeFunction] Error:', errorMsg);
+    throw new Error(errorMsg);
   }
 
-  return data;
+  return await response.json();
 }
 
 // ─── Database helpers ─────────────────────────────────────────────────────────

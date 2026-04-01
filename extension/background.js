@@ -60,6 +60,10 @@ import {
   buildResumeGeneratePrompt, // Builds the prompt that generates an ATS-optimized resume
   buildTestPrompt,          // Builds a minimal "ping" prompt used to validate AI connectivity
   buildChatPrompt,          // Builds multi-turn chat prompt with job + profile context
+  buildInterviewQuestionsPrompt,  // Builds prompt that generates categorized interview questions
+  buildAnswerEvaluationPrompt,    // Builds prompt that evaluates a practice interview answer
+  buildFollowUpQuestionPrompt,    // Builds prompt that generates an adaptive follow-up question
+  buildPositioningAdvicePrompt,   // Builds prompt for strategic interview positioning advice
   DEFAULT_MODEL,        // Fallback model identifier when the user has not configured one
   DEFAULT_TEMPERATURE,  // Fallback temperature value (typically 0 or 0.7)
   DEFAULT_PROVIDER      // Fallback provider id (e.g. 'openai')
@@ -213,7 +217,17 @@ IMPORTANT GUIDELINES:
 - Be professional but authentic — avoid generic corporate speak
 - Never fabricate experiences or skills not in the profile
 - If the profile lacks relevant experience for the question, acknowledge it honestly and pivot to transferable skills
-- Respond with ONLY the answer text. No preamble, no "Here's a draft", no quotes around the answer.`
+- Respond with ONLY the answer text. No preamble, no "Here's a draft", no quotes around the answer.`,
+
+  interviewPrep: `You are a senior interview coach with 15+ years of hiring experience. You prepare candidates by generating realistic, role-specific practice questions and providing honest, constructive feedback on their answers.
+
+GUIDELINES:
+- Tailor everything to the specific role, company, and seniority level
+- For behavioral questions, use STAR method and reference the candidate's actual experience
+- For technical questions, calibrate to the tech stack and domain in the JD
+- Score answers honestly — don't inflate scores to be nice
+- Provide specific, actionable feedback — not generic advice
+- Sample answers should use the candidate's real experience, never fabricated details`
 };
 
 // Short descriptions for each prompt (used by the UI)
@@ -225,7 +239,8 @@ const PROMPT_DESCRIPTIONS = {
   autofill: 'Rules for auto-filling application form fields',
   resumeParse: 'How uploaded resumes are parsed into structured data',
   jdDigest: 'How job descriptions are extracted into structured digests',
-  edgeSystem: 'Global AI persona used by all backend (server-side) calls'
+  edgeSystem: 'Global AI persona used by all backend (server-side) calls',
+  interviewPrep: 'Controls how interview questions are generated and answers are evaluated'
 };
 
 // Human-readable labels for each prompt
@@ -237,7 +252,8 @@ const PROMPT_LABELS = {
   autofill: 'Form Autofill',
   resumeParse: 'Resume Parsing',
   jdDigest: 'JD Digest Extraction',
-  edgeSystem: 'Backend AI Persona'
+  edgeSystem: 'Backend AI Persona',
+  interviewPrep: 'Interview Prep Coach'
 };
 
 /**
@@ -297,7 +313,8 @@ async function getSettings() {
     apiKey: '',
     model: DEFAULT_MODEL,
     temperature: DEFAULT_TEMPERATURE,
-    tokenBudgets: { resume: 8192, analysis: 4096, coverLetter: 2048, chat: 1024 }
+    useBackend: true,
+    tokenBudgets: { resume: 8192, analysis: 4096, coverLetter: 2048, chat: 1024, interviewPrep: 2048 }
   };
   const saved = result.aiSettings || {};
   // Merge so that tokenBudgets defaults are always present
@@ -559,27 +576,35 @@ async function handleDigestJD(rawJD, jobTitle, company, url) {
   }
 
   // ── Backend path ──────────────────────────────────────────────────────
-  const signedIn = await isSignedIn();
-  if (signedIn) {
+  const _settings = await getSettings();
+  const _signedIn = await isSignedIn();
+  const useBackend = _settings.useBackend !== false && _signedIn;
+  console.log('[EDGE][digestJD] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
+  if (useBackend) {
     try {
+      console.log('[EDGE][digestJD] Calling Edge Function...');
       const result = await callEdgeFunction('generate-answer', {
         question: `Extract a structured digest from this job description. Return ONLY valid JSON with these fields: role_title, company, seniority, employment_type, location, key_requirements (max 8), nice_to_haves (max 5), responsibilities (max 6), tech_stack, soft_skills (max 5), culture_signals (max 3), ats_keywords (max 15 exact phrases), years_experience, education, salary_range, industry.`,
         jd_text: rawJD,
         jd_company: company,
         jd_role: jobTitle,
         max_tokens: 1024,
+        action_type: 'jd_digest',
       });
       if (result?.answer) {
+        console.log('[EDGE][digestJD] Success, model:', result.model, 'cached:', result.cached);
         const digest = parseJSONResponse(result.answer);
         if (url) await setCachedDigest(url, digest);
         return digest;
+      } else {
+        console.warn('[EDGE][digestJD] Got 200 but answer is falsy:', JSON.stringify({ model: result?.model, cached: result?.cached, keys: Object.keys(result || {}) }));
       }
     } catch (err) {
-      console.warn('[digestJD] Backend call failed, falling back to local AI:', err.message);
+      console.warn('[EDGE][digestJD] FAILED:', err.message, '— falling back to local AI');
     }
   }
 
-  // ── Local path ────────────────────────────────────────────────────────
+  // ── Local path (only reached if signed out or offline) ────────────────
   const settings = await getSettings();
   if (!settings.apiKey) throw new Error('No API key configured. Sign in with Google or go to Profile → AI Settings.');
 
@@ -688,6 +713,17 @@ function sliceProfileForOperation(profile, operation) {
         skills: profile.skills,
       };
 
+    case 'interview_prep':
+      // Needs: full experience for STAR stories + skills + education
+      return {
+        name: profile.name,
+        summary: profile.summary,
+        skills: profile.skills,
+        experience: profile.experience,
+        education: profile.education,
+        certifications: profile.certifications,
+      };
+
     default:
       return profile;
   }
@@ -710,26 +746,102 @@ function sliceProfileForOperation(profile, operation) {
  * Fires a minimal "hello" request to the configured AI provider to confirm that
  * the API key is valid and the network is reachable.
  *
- * Uses temperature 0 and a small token budget because the response content is
- * not displayed to the user — only success / failure matters.
+ * 4-layer diagnostic health check: settings → auth → Edge Function → local AI.
+ * Returns a structured diagnostics object showing pass/fail for each layer.
  *
  * @async
- * @throws {Error} If no API key is configured in settings.
- * @returns {Promise<Object>} Parsed JSON response from the AI (typically { ok: true }).
+ * @returns {Promise<Object>} Diagnostics object with status per layer.
  */
 async function handleTestConnection() {
-  const settings = await getSettings();
-  // An empty API key would result in a 401 from the provider; surface this
-  // immediately with a clear message rather than letting the HTTP call fail.
-  if (!settings.apiKey) throw new Error('No API key configured');
+  const diagnostics = {
+    timestamp: new Date().toISOString(),
+    layers: {},
+  };
 
-  const messages = buildTestPrompt(); // Returns a minimal [{ role, content }] array
-  const result = await callAI(settings.provider, settings.apiKey, messages, {
-    model: settings.model,
-    temperature: 0,     // Deterministic — we only care about structural validity
-    maxTokens: 100      // Tiny budget: the test prompt expects a one-liner JSON reply
-  });
-  return parseJSONResponse(result);
+  // Layer 1: Settings check
+  const settings = await getSettings();
+  diagnostics.layers.settings = {
+    status: 'ok',
+    useBackend: settings.useBackend !== false,
+    hasApiKey: !!settings.apiKey,
+    provider: settings.provider || 'none',
+    model: settings.model || 'none',
+  };
+
+  // Layer 2: Auth check
+  const signedIn = await isSignedIn();
+  if (signedIn) {
+    const session = await getSession();
+    const now = Math.floor(Date.now() / 1000);
+    const isExpired = session?.expires_at ? session.expires_at < now : true;
+    diagnostics.layers.auth = {
+      status: 'ok',
+      signedIn: true,
+      hasAccessToken: !!session?.access_token,
+      expiresAt: session?.expires_at ? new Date(session.expires_at * 1000).toISOString() : 'unknown',
+      isExpired,
+      userEmail: session?.user?.email || 'unknown',
+    };
+  } else {
+    diagnostics.layers.auth = {
+      status: 'warn',
+      signedIn: false,
+      detail: 'Not signed in — Edge Function calls will be skipped',
+    };
+  }
+
+  // Layer 3: Edge Function ping (only if backend enabled + signed in)
+  if (settings.useBackend !== false && signedIn) {
+    try {
+      const t0 = Date.now();
+      const result = await callEdgeFunction('generate-answer', {
+        question: 'Respond with exactly: {"ok":true}',
+        max_tokens: 50,
+        action_type: 'classification',
+      });
+      diagnostics.layers.edgeFunction = {
+        status: 'ok',
+        latencyMs: Date.now() - t0,
+        model: result?.model || 'unknown',
+        hasAnswer: !!result?.answer,
+        answerPreview: (result?.answer || '').substring(0, 100),
+        cached: result?.cached || false,
+      };
+    } catch (err) {
+      diagnostics.layers.edgeFunction = {
+        status: 'error',
+        error: err.message,
+      };
+    }
+  } else {
+    diagnostics.layers.edgeFunction = {
+      status: 'skipped',
+      reason: settings.useBackend === false ? 'useBackend is OFF in settings' : 'not signed in',
+    };
+  }
+
+  // Layer 4: Local AI test (only if API key configured)
+  if (settings.apiKey) {
+    try {
+      const messages = buildTestPrompt();
+      const result = await callAI(settings.provider, settings.apiKey, messages, {
+        model: settings.model,
+        temperature: 0,
+        maxTokens: 100,
+      });
+      diagnostics.layers.localAI = { status: 'ok', parsed: parseJSONResponse(result) };
+    } catch (err) {
+      diagnostics.layers.localAI = { status: 'error', error: err.message };
+    }
+  } else {
+    diagnostics.layers.localAI = {
+      status: 'skipped',
+      reason: 'no API key configured',
+    };
+  }
+
+  console.log('[EDGE][TEST_CONNECTION] Full diagnostics:', JSON.stringify(diagnostics, null, 2));
+  return diagnostics;
 }
 
 /**
@@ -791,9 +903,13 @@ async function handleAnalyzeJob(jobDescription, jobTitle, company, url) {
   const slicedProfile = sliceProfileForOperation(profile, 'analysis');
 
   // ── Backend path ────────────────────────────────────────────────────────
-  const signedIn = await isSignedIn();
-  if (signedIn) {
+  const _settings = await getSettings();
+  const _signedIn = await isSignedIn();
+  const useBackend = _settings.useBackend !== false && _signedIn;
+  console.log('[EDGE][analyzeJob] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
+  if (useBackend) {
     try {
+      console.log('[EDGE][analyzeJob] Calling Edge Function...');
       const richContext = await buildRichContextForPrompt();
       const settings = await getSettings();
       const result = await callEdgeFunction('generate-answer', {
@@ -802,6 +918,7 @@ async function handleAnalyzeJob(jobDescription, jobTitle, company, url) {
         jd_company: digest?.company || company,
         jd_role: digest?.role_title || jobTitle,
         max_tokens: settings.tokenBudgets.analysis,
+        action_type: 'classification',
         user_profile: {
           full_name: slicedProfile.name,
           headline: slicedProfile.summary?.substring(0, 200),
@@ -816,12 +933,15 @@ async function handleAnalyzeJob(jobDescription, jobTitle, company, url) {
       });
 
       if (result?.answer) {
+        console.log('[EDGE][analyzeJob] Success, model:', result.model, 'cached:', result.cached);
         const parsed = parseJSONResponse(result.answer);
         parsed.jdDigest = digest || null;
         return parsed;
+      } else {
+        console.warn('[EDGE][analyzeJob] Got 200 but answer is falsy:', JSON.stringify({ model: result?.model, cached: result?.cached, keys: Object.keys(result || {}) }));
       }
     } catch (err) {
-      console.warn('[analyzeJob] Backend call failed, falling back to local AI:', err.message);
+      console.warn('[EDGE][analyzeJob] FAILED:', err.message, '— falling back to local AI');
     }
   }
 
@@ -863,9 +983,13 @@ async function handleGenerateAutofill(formFields) {
   const slicedProfile = sliceProfileForOperation(profile, 'autofill');
 
   // ── Backend path: use Edge Function when signed in ──────────────────────
-  const signedIn = await isSignedIn();
-  if (signedIn) {
+  const _settings = await getSettings();
+  const _signedIn = await isSignedIn();
+  const useBackend = _settings.useBackend !== false && _signedIn;
+  console.log('[EDGE][autofill] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
+  if (useBackend) {
     try {
+      console.log('[EDGE][autofill] Calling Edge Function...');
       const richContext = await buildRichContextForPrompt();
       const fieldQuestions = formFields.map(f =>
         `Form field "${f.label || f.name}" (type: ${f.type}${f.options ? ', options: ' + f.options.join(', ') : ''})`
@@ -873,6 +997,7 @@ async function handleGenerateAutofill(formFields) {
 
       const result = await callEdgeFunction('generate-answer', {
         question: `Fill out these form fields based on my profile and Q&A answers:\n\n${fieldQuestions}\n\nAPPLICANT CONTEXT:\n${richContext}\n\nRespond with a JSON object mapping each field label to its suggested value.`,
+        action_type: 'answer_generation',
         user_profile: {
           full_name: slicedProfile.name,
           headline: slicedProfile.summary?.substring(0, 200),
@@ -889,10 +1014,13 @@ async function handleGenerateAutofill(formFields) {
       });
 
       if (result?.answer) {
+        console.log('[EDGE][autofill] Success, model:', result.model);
         return parseJSONResponse(result.answer);
+      } else {
+        console.warn('[EDGE][autofill] Got 200 but answer is falsy:', JSON.stringify({ model: result?.model, cached: result?.cached, keys: Object.keys(result || {}) }));
       }
     } catch (err) {
-      console.warn('[autofill] Backend call failed, falling back to local AI:', err.message);
+      console.warn('[EDGE][autofill] FAILED:', err.message, '— falling back to local AI');
     }
   }
 
@@ -1007,7 +1135,8 @@ async function handleSaveJob(jobData) {
     score: jobData.score || 0,
     url: jobData.url || '',
     date: new Date().toISOString().split('T')[0], // Store date only (YYYY-MM-DD), not time
-    analysis: jobData.analysis || null             // Full analysis blob; may be null for quick-saves
+    analysis: jobData.analysis || null,            // Full analysis blob; may be null for quick-saves
+    applied: false                                  // Whether the user has applied to this job
   };
   // Prepend so the UI shows the most recently saved job at the top
   jobs.unshift(job);
@@ -1125,9 +1254,13 @@ async function handleGenerateCoverLetter(jobDescription, analysis, url) {
   const slicedProfile = sliceProfileForOperation(profile, 'cover_letter');
 
   // ── Backend path ────────────────────────────────────────────────────────
-  const signedIn = await isSignedIn();
-  if (signedIn) {
+  const _settings = await getSettings();
+  const _signedIn = await isSignedIn();
+  const useBackend = _settings.useBackend !== false && _signedIn;
+  console.log('[EDGE][coverLetter] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
+  if (useBackend) {
     try {
+      console.log('[EDGE][coverLetter] Calling Edge Function...');
       const richContext = await buildRichContextForPrompt();
       const settings = await getSettings();
       const edgeResult = await callEdgeFunction('generate-answer', {
@@ -1136,6 +1269,7 @@ async function handleGenerateCoverLetter(jobDescription, analysis, url) {
         jd_company: digest?.company || analysis?.company || '',
         jd_role: digest?.role_title || analysis?.title || '',
         max_tokens: settings.tokenBudgets.coverLetter,
+        action_type: 'cover_letter',
         user_profile: {
           full_name: slicedProfile.name,
           headline: slicedProfile.summary?.substring(0, 200),
@@ -1150,10 +1284,13 @@ async function handleGenerateCoverLetter(jobDescription, analysis, url) {
       });
 
       if (edgeResult?.answer) {
+        console.log('[EDGE][coverLetter] Success, model:', edgeResult.model);
         return { text: edgeResult.answer };
+      } else {
+        console.warn('[EDGE][coverLetter] Got 200 but answer is falsy:', JSON.stringify({ model: edgeResult?.model, cached: edgeResult?.cached, keys: Object.keys(edgeResult || {}) }));
       }
     } catch (err) {
-      console.warn('[coverLetter] Backend call failed, falling back to local AI:', err.message);
+      console.warn('[EDGE][coverLetter] FAILED:', err.message, '— falling back to local AI');
     }
   }
 
@@ -1212,9 +1349,13 @@ async function handleRewriteBullets(jobDescription, missingSkills, analysis, url
   const slicedProfile = sliceProfileForOperation(profile, 'bullet_rewrite');
 
   // ── Backend path ────────────────────────────────────────────────────────
-  const signedIn = await isSignedIn();
-  if (signedIn) {
+  const _settings = await getSettings();
+  const _signedIn = await isSignedIn();
+  const useBackend = _settings.useBackend !== false && _signedIn;
+  console.log('[EDGE][rewriteBullets] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
+  if (useBackend) {
     try {
+      console.log('[EDGE][rewriteBullets] Calling Edge Function...');
       const richContext = await buildRichContextForPrompt();
       const edgeResult = await callEdgeFunction('generate-answer', {
         question: `Rewrite my resume bullets to better target this job. Focus on these missing skills: ${(missingSkills || []).join(', ')}. Return a JSON array of {job, original, improved} objects.
@@ -1222,6 +1363,7 @@ async function handleRewriteBullets(jobDescription, missingSkills, analysis, url
 APPLICANT CONTEXT (use career goals and experience highlights for better framing):
 ${richContext}`,
         jd_text: digest ? JSON.stringify(digest) : jobDescription.substring(0, 3000),
+        action_type: 'resume',
         user_profile: {
           full_name: profile.name,
           summary: profile.summary,
@@ -1234,12 +1376,15 @@ ${richContext}`,
         },
       });
       if (edgeResult?.answer) {
+        console.log('[EDGE][rewriteBullets] Success, model:', edgeResult.model);
         try { return parseJSONResponse(edgeResult.answer); }
         catch (_) { throw new Error('AI response was truncated or invalid. Try again.'); }
+      } else {
+        console.warn('[EDGE][rewriteBullets] Got 200 but answer is falsy:', JSON.stringify({ model: edgeResult?.model, cached: edgeResult?.cached, keys: Object.keys(edgeResult || {}) }));
       }
     } catch (err) {
       if (err.message.includes('truncated')) throw err;
-      console.warn('[rewriteBullets] Backend call failed, falling back to local AI:', err.message);
+      console.warn('[EDGE][rewriteBullets] FAILED:', err.message, '— falling back to local AI');
     }
   }
 
@@ -1301,15 +1446,20 @@ async function handleGenerateResume(jobDescription, jobTitle, company, customIns
   }
 
   // ── Backend path ────────────────────────────────────────────────────────
-  const signedIn = await isSignedIn();
-  if (signedIn) {
+  const _settings = await getSettings();
+  const _signedIn = await isSignedIn();
+  const useBackend = _settings.useBackend !== false && _signedIn;
+  console.log('[EDGE][generateResume] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
+  if (useBackend) {
     try {
+      console.log('[EDGE][generateResume] Calling Edge Function...');
       const richContext = await buildRichContextForPrompt();
       const edgeResult = await callEdgeFunction('generate-answer', {
         question: `${prompts.resume}${customInstructions ? '\nAdditional: ' + customInstructions : ''}\n\nAPPLICANT CONTEXT:\n${richContext}`,
         jd_text: digest ? JSON.stringify(digest) : jobDescription.substring(0, MAX_JD_LENGTH_GENERATION),
         jd_company: digest?.company || company,
         jd_role: digest?.role_title || jobTitle,
+        action_type: 'resume_generation',
         user_profile: {
           full_name: profile.name,
           headline: profile.summary?.substring(0, 200),
@@ -1327,10 +1477,13 @@ async function handleGenerateResume(jobDescription, jobTitle, company, customIns
       });
 
       if (edgeResult?.answer) {
+        console.log('[EDGE][generateResume] Success, model:', edgeResult.model);
         return { text: edgeResult.answer };
+      } else {
+        console.warn('[EDGE][generateResume] Got 200 but answer is falsy:', JSON.stringify({ model: edgeResult?.model, cached: edgeResult?.cached, keys: Object.keys(edgeResult || {}) }));
       }
     } catch (err) {
-      console.warn('[generateResume] Backend call failed, falling back to local AI:', err.message);
+      console.warn('[EDGE][generateResume] FAILED:', err.message, '— falling back to local AI');
     }
   }
 
@@ -1398,9 +1551,13 @@ async function handleChat(message, history, jobUrl) {
   const context = { profileSummary, richContext, jdDigest: digestStr, analysisHighlights };
 
   // ── Backend path ──────────────────────────────────────────────────────
-  const signedIn = await isSignedIn();
-  if (signedIn) {
+  const _settings = await getSettings();
+  const _signedIn = await isSignedIn();
+  const useBackend = _settings.useBackend !== false && _signedIn;
+  console.log('[EDGE][chat] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
+  if (useBackend) {
     try {
+      console.log('[EDGE][chat] Calling Edge Function...');
       const systemContext = [
         profileSummary ? `APPLICANT:\n${profileSummary}` : '',
         richContext ? `CONTEXT:\n${richContext}` : '',
@@ -1417,10 +1574,13 @@ async function handleChat(message, history, jobUrl) {
       });
 
       if (result?.answer) {
+        console.log('[EDGE][chat] Success, model:', result.model);
         return { reply: result.answer };
+      } else {
+        console.warn('[EDGE][chat] Got 200 but answer is falsy:', JSON.stringify({ model: result?.model, cached: result?.cached, keys: Object.keys(result || {}) }));
       }
     } catch (err) {
-      console.warn('[chat] Backend call failed, falling back to local AI:', err.message);
+      console.warn('[EDGE][chat] FAILED:', err.message, '— falling back to local AI');
     }
   }
 
@@ -1437,6 +1597,443 @@ async function handleChat(message, history, jobUrl) {
   });
 
   return { reply: result };
+}
+
+
+// ─── Interview Prep ─────────────────────────────────────────────────────────
+//
+// Session management and AI handlers for the interview preparation feature.
+// Sessions are stored per saved job in chrome.storage.local under
+// 'interviewPrepSessions'. Max 20 sessions with LRU eviction.
+
+const MAX_PREP_SESSIONS = 20;
+const MAX_FOLLOWUPS_PER_SESSION = 8;
+
+async function getInterviewSession(jobId) {
+  const result = await chrome.storage.local.get('interviewPrepSessions');
+  const sessions = result.interviewPrepSessions || {};
+  return sessions[jobId] || null;
+}
+
+async function saveInterviewSession(session) {
+  const result = await chrome.storage.local.get('interviewPrepSessions');
+  const sessions = result.interviewPrepSessions || {};
+  session.updatedAt = Date.now();
+  sessions[session.jobId] = session;
+
+  // LRU eviction: if over limit, remove oldest by updatedAt
+  const keys = Object.keys(sessions);
+  if (keys.length > MAX_PREP_SESSIONS) {
+    const sorted = keys.sort((a, b) => (sessions[a].updatedAt || 0) - (sessions[b].updatedAt || 0));
+    while (Object.keys(sessions).length > MAX_PREP_SESSIONS) {
+      delete sessions[sorted.shift()];
+    }
+  }
+
+  await chrome.storage.local.set({ interviewPrepSessions: sessions });
+  return session;
+}
+
+function computeSessionAnalytics(session) {
+  const answered = session.questions.filter(q => q.evaluation);
+  const total = session.questions.length;
+  const followUps = session.questions.filter(q => q.isFollowUp).length;
+
+  // Category scores
+  const catScores = {};
+  for (const cat of ['behavioral', 'technical', 'situational', 'role-specific']) {
+    const catQs = answered.filter(q => q.category === cat);
+    catScores[cat] = catQs.length > 0
+      ? Math.round(catQs.reduce((sum, q) => sum + q.evaluation.score, 0) / catQs.length * 10)
+      : null;
+  }
+
+  // Overall readiness (weighted average of category scores, 0-100)
+  const validScores = Object.values(catScores).filter(s => s !== null);
+  const overallReadiness = validScores.length > 0
+    ? Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length)
+    : 0;
+
+  // Weak and strong areas
+  const weakAreas = [];
+  const strongAreas = [];
+  for (const q of answered) {
+    if (q.evaluation.score <= 4) {
+      for (const imp of (q.evaluation.improvements || [])) {
+        if (!weakAreas.includes(imp)) weakAreas.push(imp);
+      }
+    }
+    if (q.evaluation.score >= 7) {
+      for (const str of (q.evaluation.strengths || [])) {
+        if (!strongAreas.includes(str)) strongAreas.push(str);
+      }
+    }
+  }
+
+  // Avg time
+  const times = answered.filter(q => q.timeSpentSec != null).map(q => q.timeSpentSec);
+  const avgTime = times.length > 0 ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null;
+
+  return {
+    overallReadiness,
+    categoryScores: catScores,
+    weakAreas: weakAreas.slice(0, 5),
+    strongAreas: strongAreas.slice(0, 5),
+    positioningAdvice: session.analytics?.positioningAdvice || null,
+    questionsAnswered: answered.length,
+    questionsTotal: total,
+    avgTimePerAnswer: avgTime,
+    followUpsGenerated: followUps,
+  };
+}
+
+async function handleGenerateInterviewQuestions(jobId, jobUrl, categories) {
+  const profile = await getProfile();
+  if (!profile) throw new Error('No profile found. Upload your resume first.');
+
+  const slicedProfile = sliceProfileForOperation(profile, 'interview_prep');
+  const enrichedProfile = await enrichProfileWithContext(slicedProfile);
+
+  // Load JD digest
+  let jdDigest = null;
+  if (jobUrl) {
+    try { jdDigest = await getCachedDigest(jobUrl); } catch (_) {}
+  }
+
+  // Load saved job analysis
+  let analysis = null;
+  const savedJobs = await getSavedJobs();
+  const savedJob = savedJobs.find(j => j.id === jobId);
+  if (savedJob?.analysis) analysis = savedJob.analysis;
+
+  if (!jdDigest && !analysis) {
+    throw new Error('No job data available. Please analyze this job first.');
+  }
+
+  const prompts = await getCustomPrompts();
+  const settings = await getSettings();
+  const messages = buildInterviewQuestionsPrompt(
+    enrichedProfile, jdDigest, analysis, categories, prompts.interviewPrep
+  );
+
+  let questionsData;
+
+  // Backend path
+  const _settings = await getSettings();
+  const _signedIn = await isSignedIn();
+  const useBackend = _settings.useBackend !== false && _signedIn;
+  console.log('[EDGE][interviewQuestions] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
+  if (useBackend) {
+    try {
+      console.log('[EDGE][interviewQuestions] Calling Edge Function...');
+      const result = await callEdgeFunction('generate-answer', {
+        question: messages[0].content,
+        action_type: 'interview_prep',
+        max_tokens: settings.tokenBudgets.interviewPrep,
+      });
+
+      if (result?.answer) {
+        console.log('[EDGE][interviewQuestions] Success, model:', result.model);
+        questionsData = parseJSONResponse(result.answer);
+      } else {
+        console.warn('[EDGE][interviewQuestions] Got 200 but answer is falsy:', JSON.stringify({ model: result?.model, cached: result?.cached, keys: Object.keys(result || {}) }));
+      }
+    } catch (err) {
+      console.warn('[EDGE][interviewQuestions] FAILED:', err.message, '— falling back to local AI');
+    }
+  }
+
+  // Local fallback
+  if (!questionsData) {
+    if (!settings.apiKey) throw new Error('No API key configured. Sign in or set up AI Settings.');
+    const raw = await callAI(settings.provider, settings.apiKey, messages, {
+      model: settings.model,
+      maxTokens: settings.tokenBudgets.interviewPrep,
+      responseFormat: 'json'
+    });
+    questionsData = parseJSONResponse(raw);
+  }
+
+  if (!questionsData || !questionsData.questions || questionsData.questions.length === 0) {
+    throw new Error('AI did not return any questions. Try again or adjust your Interview Prep prompt in Settings.');
+  }
+
+  const questions = (questionsData.questions || []).map((q, i) => ({
+    id: `q_${Date.now()}_${i}`,
+    category: q.category || 'behavioral',
+    difficulty: q.difficulty || 'medium',
+    question: q.question,
+    keyPoints: q.keyPoints || [],
+    isFollowUp: false,
+    parentQuestionId: null,
+    userAnswer: null,
+    timeSpentSec: null,
+    timeLimitSec: q.timeLimitSec || 120,
+    evaluation: null,
+    answeredAt: null,
+  }));
+
+  const session = {
+    jobId,
+    jobTitle: savedJob?.title || jdDigest?.role_title || 'Unknown Role',
+    company: savedJob?.company || jdDigest?.company || 'Unknown Company',
+    jobUrl: jobUrl || savedJob?.url || '',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    questions,
+    analytics: computeSessionAnalytics({ questions, analytics: {} }),
+  };
+
+  await saveInterviewSession(session);
+  return session;
+}
+
+async function handleEvaluateAnswer(jobId, questionId, question, userAnswer, category, keyPoints, timeSpentSec) {
+  const profile = await getProfile();
+  const slicedProfile = sliceProfileForOperation(profile, 'interview_prep');
+
+  const session = await getInterviewSession(jobId);
+  if (!session) throw new Error('No interview prep session found.');
+
+  // Load JD digest
+  let jdDigest = null;
+  if (session.jobUrl) {
+    try { jdDigest = await getCachedDigest(session.jobUrl); } catch (_) {}
+  }
+
+  const prompts = await getCustomPrompts();
+  const settings = await getSettings();
+  const messages = buildAnswerEvaluationPrompt(
+    slicedProfile, jdDigest, question, userAnswer, keyPoints, timeSpentSec, prompts.interviewPrep
+  );
+
+  let evalData;
+
+  const _settings = await getSettings();
+  const _signedIn = await isSignedIn();
+  const useBackend = _settings.useBackend !== false && _signedIn;
+  console.log('[EDGE][evaluateAnswer] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
+  if (useBackend) {
+    try {
+      console.log('[EDGE][evaluateAnswer] Calling Edge Function...');
+      const result = await callEdgeFunction('generate-answer', {
+        question: messages[0].content,
+        action_type: 'interview_prep',
+        max_tokens: settings.tokenBudgets.interviewPrep,
+      });
+      if (result?.answer) {
+        console.log('[EDGE][evaluateAnswer] Success, model:', result.model);
+        evalData = parseJSONResponse(result.answer);
+      } else {
+        console.warn('[EDGE][evaluateAnswer] Got 200 but answer is falsy:', JSON.stringify({ model: result?.model, cached: result?.cached, keys: Object.keys(result || {}) }));
+      }
+    } catch (err) {
+      console.warn('[EDGE][evaluateAnswer] FAILED:', err.message, '— falling back to local AI');
+    }
+  }
+
+  if (!evalData) {
+    if (!settings.apiKey) throw new Error('No API key configured.');
+    const raw = await callAI(settings.provider, settings.apiKey, messages, {
+      model: settings.model,
+      maxTokens: settings.tokenBudgets.interviewPrep,
+      responseFormat: 'json'
+    });
+    evalData = parseJSONResponse(raw);
+  }
+
+  // Update the question in the session
+  const qIdx = session.questions.findIndex(q => q.id === questionId);
+  if (qIdx !== -1) {
+    session.questions[qIdx].userAnswer = userAnswer;
+    session.questions[qIdx].timeSpentSec = timeSpentSec;
+    session.questions[qIdx].answeredAt = Date.now();
+    session.questions[qIdx].evaluation = {
+      score: evalData.score || 5,
+      strengths: evalData.strengths || [],
+      improvements: evalData.improvements || [],
+      sampleAnswer: evalData.sampleAnswer || '',
+      relevantSkills: evalData.relevantSkills || [],
+    };
+  }
+
+  session.analytics = computeSessionAnalytics(session);
+  await saveInterviewSession(session);
+
+  return {
+    evaluation: session.questions[qIdx]?.evaluation,
+    shouldFollowUp: evalData.shouldFollowUp === true,
+    analytics: session.analytics,
+  };
+}
+
+async function handleGenerateFollowUp(jobId, parentQuestionId, question, userAnswer, evaluation, category) {
+  const session = await getInterviewSession(jobId);
+  if (!session) throw new Error('No interview prep session found.');
+
+  // Check follow-up cap
+  const currentFollowUps = session.questions.filter(q => q.isFollowUp).length;
+  if (currentFollowUps >= MAX_FOLLOWUPS_PER_SESSION) {
+    throw new Error('Maximum follow-up questions reached for this session.');
+  }
+
+  const profile = await getProfile();
+  const slicedProfile = sliceProfileForOperation(profile, 'interview_prep');
+
+  let jdDigest = null;
+  if (session.jobUrl) {
+    try { jdDigest = await getCachedDigest(session.jobUrl); } catch (_) {}
+  }
+
+  const prompts = await getCustomPrompts();
+  const settings = await getSettings();
+  const messages = buildFollowUpQuestionPrompt(
+    slicedProfile, jdDigest, question, userAnswer, evaluation, category, prompts.interviewPrep
+  );
+
+  let followUpData;
+
+  const _settings = await getSettings();
+  const _signedIn = await isSignedIn();
+  const useBackend = _settings.useBackend !== false && _signedIn;
+  console.log('[EDGE][followUp] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
+  if (useBackend) {
+    try {
+      console.log('[EDGE][followUp] Calling Edge Function...');
+      const result = await callEdgeFunction('generate-answer', {
+        question: messages[0].content,
+        action_type: 'interview_prep',
+        max_tokens: settings.tokenBudgets.interviewPrep,
+      });
+      if (result?.answer) {
+        console.log('[EDGE][followUp] Success, model:', result.model);
+        followUpData = parseJSONResponse(result.answer);
+      } else {
+        console.warn('[EDGE][followUp] Got 200 but answer is falsy:', JSON.stringify({ model: result?.model, cached: result?.cached, keys: Object.keys(result || {}) }));
+      }
+    } catch (err) {
+      console.warn('[EDGE][followUp] FAILED:', err.message, '— falling back to local AI');
+    }
+  }
+
+  if (!followUpData) {
+    if (!settings.apiKey) throw new Error('No API key configured.');
+    const raw = await callAI(settings.provider, settings.apiKey, messages, {
+      model: settings.model,
+      maxTokens: settings.tokenBudgets.interviewPrep,
+      responseFormat: 'json'
+    });
+    followUpData = parseJSONResponse(raw);
+  }
+
+  const followUpQ = {
+    id: `q_${Date.now()}_fu`,
+    category: category,
+    difficulty: followUpData.difficulty || 'medium',
+    question: followUpData.question,
+    keyPoints: followUpData.keyPoints || [],
+    isFollowUp: true,
+    parentQuestionId: parentQuestionId,
+    userAnswer: null,
+    timeSpentSec: null,
+    timeLimitSec: followUpData.timeLimitSec || 120,
+    evaluation: null,
+    answeredAt: null,
+  };
+
+  // Insert follow-up right after its parent question
+  const parentIdx = session.questions.findIndex(q => q.id === parentQuestionId);
+  if (parentIdx !== -1) {
+    session.questions.splice(parentIdx + 1, 0, followUpQ);
+  } else {
+    session.questions.push(followUpQ);
+  }
+
+  session.analytics = computeSessionAnalytics(session);
+  await saveInterviewSession(session);
+  return { followUpQuestion: followUpQ, session };
+}
+
+async function handleGeneratePositioningAdvice(jobId) {
+  const session = await getInterviewSession(jobId);
+  if (!session) throw new Error('No interview prep session found.');
+
+  const answered = session.questions.filter(q => q.evaluation);
+  if (answered.length < 5) throw new Error('Answer at least 5 questions before generating positioning advice.');
+
+  const profile = await getProfile();
+  const enrichedProfile = await enrichProfileWithContext(profile);
+
+  let jdDigest = null;
+  if (session.jobUrl) {
+    try { jdDigest = await getCachedDigest(session.jobUrl); } catch (_) {}
+  }
+
+  let analysis = null;
+  const savedJobs = await getSavedJobs();
+  const savedJob = savedJobs.find(j => j.id === jobId);
+  if (savedJob?.analysis) analysis = savedJob.analysis;
+
+  // Build session summary for the prompt
+  const sessionSummary = {
+    overallReadiness: session.analytics.overallReadiness,
+    categoryScores: session.analytics.categoryScores,
+    weakAreas: session.analytics.weakAreas,
+    strongAreas: session.analytics.strongAreas,
+    questionsAnswered: answered.length,
+    avgTimePerAnswer: session.analytics.avgTimePerAnswer,
+    questionResults: answered.map(q => ({
+      category: q.category,
+      question: q.question,
+      score: q.evaluation.score,
+      strengths: q.evaluation.strengths,
+      improvements: q.evaluation.improvements,
+      timeSpentSec: q.timeSpentSec,
+    })),
+  };
+
+  const prompts = await getCustomPrompts();
+  const settings = await getSettings();
+  const messages = buildPositioningAdvicePrompt(
+    enrichedProfile, jdDigest, analysis, sessionSummary, prompts.interviewPrep
+  );
+
+  let advice;
+
+  const _settings = await getSettings();
+  const _signedIn = await isSignedIn();
+  const useBackend = _settings.useBackend !== false && _signedIn;
+  console.log('[EDGE][positioningAdvice] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
+  if (useBackend) {
+    try {
+      console.log('[EDGE][positioningAdvice] Calling Edge Function...');
+      const result = await callEdgeFunction('generate-answer', {
+        question: messages[0].content,
+        action_type: 'interview_prep',
+        max_tokens: Math.max(settings.tokenBudgets.interviewPrep, 4096),
+      });
+      if (result?.answer) {
+        console.log('[EDGE][positioningAdvice] Success, model:', result.model);
+        advice = result.answer;
+      } else {
+        console.warn('[EDGE][positioningAdvice] Got 200 but answer is falsy:', JSON.stringify({ model: result?.model, cached: result?.cached, keys: Object.keys(result || {}) }));
+      }
+    } catch (err) {
+      console.warn('[EDGE][positioningAdvice] FAILED:', err.message, '— falling back to local AI');
+    }
+  }
+
+  if (!advice) {
+    if (!settings.apiKey) throw new Error('No API key configured.');
+    advice = await callAI(settings.provider, settings.apiKey, messages, {
+      model: settings.model,
+      maxTokens: Math.max(settings.tokenBudgets.interviewPrep, 4096),
+    });
+  }
+
+  session.analytics.positioningAdvice = advice;
+  await saveInterviewSession(session);
+  return { advice, analytics: session.analytics };
 }
 
 
@@ -1715,7 +2312,24 @@ const handlers = {
 
   'DELETE_JOB': (msg) => handleDeleteJob(msg.jobId),
 
+  'TOGGLE_JOB_APPLIED': async (msg) => {
+    const jobs = await getSavedJobs();
+    const job = jobs.find(j => j.id === msg.jobId);
+    if (!job) throw new Error('Job not found');
+    job.applied = !job.applied;
+    await chrome.storage.local.set({ savedJobs: jobs });
+    return { success: true, applied: job.applied };
+  },
+
   'GET_SAVED_JOBS': (msg) => getSavedJobs(),
+
+  // ── Interview Prep ──────────────────────────────────────────────────────
+  'GENERATE_INTERVIEW_QUESTIONS': (msg) => handleGenerateInterviewQuestions(msg.jobId, msg.jobUrl, msg.categories),
+  'EVALUATE_INTERVIEW_ANSWER': (msg) => handleEvaluateAnswer(msg.jobId, msg.questionId, msg.question, msg.userAnswer, msg.category, msg.keyPoints, msg.timeSpentSec),
+  'GENERATE_FOLLOWUP_QUESTION': (msg) => handleGenerateFollowUp(msg.jobId, msg.parentQuestionId, msg.question, msg.userAnswer, msg.evaluation, msg.category),
+  'GET_INTERVIEW_SESSION': (msg) => getInterviewSession(msg.jobId),
+  'SAVE_INTERVIEW_SESSION': (msg) => saveInterviewSession(msg.session),
+  'GENERATE_POSITIONING_ADVICE': (msg) => handleGeneratePositioningAdvice(msg.jobId),
 
   'GENERATE_COVER_LETTER': (msg) => handleGenerateCoverLetter(msg.jobDescription, msg.analysis, msg.url),
 
@@ -1895,7 +2509,8 @@ chrome.runtime.onInstalled.addListener((details) => {
       qaList: [],        // Legacy Q&A pairs (kept for migration path)
       applicantContext: { sections: {}, textDumps: [], version: 1 }, // New intake flow context
       savedJobs: [],     // Bookmarked job postings
-      appliedJobs: []    // Jobs the user has submitted applications for
+      appliedJobs: [],   // Jobs the user has submitted applications for
+      interviewPrepSessions: {} // Interview prep sessions keyed by job ID
     });
   }
 });

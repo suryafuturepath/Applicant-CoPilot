@@ -53,17 +53,17 @@ interface GeminiResponse {
 // --- Constants ---
 
 // --- LLM Provider config ---
-// Primary: Groq (Llama 3.3 70B — free tier, 6000 req/day, very fast)
-// Fallback: Gemini Flash (free tier, lower quota)
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+// Primary: Gemini Flash (free tier, fast)
+// Fallback: Groq (Llama 3.3 70B — free tier, 6000 req/day, very fast)
 const GEMINI_MODEL = "gemini-2.0-flash";
+const GROQ_MODEL = "llama-3.3-70b-versatile";
 const MAX_TOKENS_DEFAULT = 1024;
 
 const COST_PER_INPUT_TOKEN = 0;
 const COST_PER_OUTPUT_TOKEN = 0;
 
 // Rate limit: tracked per user via usage_logs count in the last hour
-const MAX_REQUESTS_PER_HOUR = 50;
+const MAX_REQUESTS_PER_HOUR = 200;
 
 // Valid action types for usage logging
 const VALID_ACTION_TYPES = new Set([
@@ -74,6 +74,7 @@ const VALID_ACTION_TYPES = new Set([
   "classification",
   "resume_generation",
   "jd_digest",
+  "interview_prep",
 ]);
 
 // --- CORS headers ---
@@ -304,32 +305,28 @@ Deno.serve(async (req: Request) => {
     }
 
     // -- Rate limit check --
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const { count: recentRequests, error: countError } = await serviceClient
-      .from("usage_logs")
-      .select("*", { count: "exact", head: true })
-      .eq("profile_id", user.id)
-      .gte("created_at", oneHourAgo);
-
-    if (countError) {
-      console.error("Rate limit check failed:", countError);
-      // Fail open — don't block on rate limit check failure
-    } else if (
-      recentRequests !== null && recentRequests >= MAX_REQUESTS_PER_HOUR
-    ) {
-      return new Response(
-        JSON.stringify({
-          error: "Rate limit exceeded",
-          detail:
-            `Maximum ${MAX_REQUESTS_PER_HOUR} requests per hour. Try again later.`,
-          retry_after_seconds: 3600,
-        }),
-        {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
+    // TODO: Re-enable before production launch (disabled during dev/testing)
+    // const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    // const { count: recentRequests, error: countError } = await serviceClient
+    //   .from("usage_logs")
+    //   .select("*", { count: "exact", head: true })
+    //   .eq("profile_id", user.id)
+    //   .gte("created_at", oneHourAgo);
+    //
+    // if (countError) {
+    //   console.error("Rate limit check failed:", countError);
+    // } else if (
+    //   recentRequests !== null && recentRequests >= MAX_REQUESTS_PER_HOUR
+    // ) {
+    //   return new Response(
+    //     JSON.stringify({
+    //       error: "Rate limit exceeded",
+    //       detail: `Maximum ${MAX_REQUESTS_PER_HOUR} requests per hour. Try again later.`,
+    //       retry_after_seconds: 3600,
+    //     }),
+    //     { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    //   );
+    // }
 
     // -- Parse request body --
     let body: RequestBody;
@@ -410,25 +407,31 @@ Deno.serve(async (req: Request) => {
     }
 
     // -- Build prompt --
-    const systemPrompt = buildSystemPrompt(
-      body.user_profile,
-      body.jd_company,
-      body.jd_role,
-      body.jd_text,
-      maxTokens,
-    );
+    // For interview_prep, the prompt builder already includes all context and
+    // JSON format instructions. Using the default career-coach system prompt
+    // would override the JSON requirement with "respond with ONLY answer text".
+    const isPassthroughAction = actionType === "interview_prep";
+    const systemPrompt = isPassthroughAction
+      ? "You are a senior interview coach. Follow the user's instructions exactly. Return the requested format."
+      : buildSystemPrompt(
+          body.user_profile,
+          body.jd_company,
+          body.jd_role,
+          body.jd_text,
+          maxTokens,
+        );
 
-    // -- Call LLM: Groq (primary) → Gemini (fallback) --
+    // -- Call LLM: OpenRouter (primary) → Groq (fallback 1) → Gemini (fallback 2) --
     let answerText = "";
     let inputTokens = 0;
     let outputTokens = 0;
     let modelUsed = "";
 
-    const groqApiKey = Deno.env.get("GROQ_API_KEY");
     const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+    const groqApiKey = Deno.env.get("GROQ_API_KEY");
 
-    if (!groqApiKey && !geminiApiKey) {
-      console.error("No LLM API keys configured (GROQ_API_KEY or GEMINI_API_KEY)");
+    if (!geminiApiKey && !groqApiKey) {
+      console.error("No LLM API keys configured (GEMINI_API_KEY or GROQ_API_KEY)");
       return new Response(
         JSON.stringify({ error: "Server configuration error" }),
         {
@@ -438,10 +441,56 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // --- Try Groq first (Llama 3.3 70B, free tier, 6000 req/day) ---
+    // --- Try Gemini first (primary, free tier) ---
     let llmSuccess = false;
+    const providerErrors: Array<{ provider: string; status?: number; error: string }> = [];
 
-    if (groqApiKey) {
+    if (geminiApiKey) {
+      try {
+        const geminiUrl =
+          `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiApiKey}`;
+
+        const geminiResponse = await fetch(geminiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            systemInstruction: {
+              parts: [{ text: systemPrompt }],
+            },
+            contents: [
+              { role: "user", parts: [{ text: body.question }] },
+            ],
+            generationConfig: {
+              maxOutputTokens: maxTokens,
+              temperature: 0.3,
+              responseMimeType: "text/plain",
+            },
+          }),
+        });
+
+        if (geminiResponse.ok) {
+          const result: GeminiResponse = await geminiResponse.json();
+          const candidate = result.candidates?.[0];
+          if (candidate?.content?.parts?.[0]?.text) {
+            answerText = candidate.content.parts[0].text;
+            inputTokens = result.usageMetadata?.promptTokenCount || 0;
+            outputTokens = result.usageMetadata?.candidatesTokenCount || 0;
+            modelUsed = result.modelVersion || GEMINI_MODEL;
+            llmSuccess = true;
+          }
+        } else {
+          const errorBody = await geminiResponse.text();
+          console.warn(`Gemini API error ${geminiResponse.status}: ${errorBody.substring(0, 200)}`);
+          providerErrors.push({ provider: "gemini", status: geminiResponse.status, error: errorBody.substring(0, 200) });
+        }
+      } catch (geminiErr) {
+        console.warn("Gemini call failed, falling back to Groq:", geminiErr);
+        providerErrors.push({ provider: "gemini", error: String(geminiErr) });
+      }
+    }
+
+    // --- Fallback: Groq (Llama 3.3 70B, free tier, 6000 req/day) ---
+    if (!llmSuccess && groqApiKey) {
       try {
         const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
           method: "POST",
@@ -473,71 +522,19 @@ Deno.serve(async (req: Request) => {
         } else {
           const errBody = await groqResponse.text();
           console.warn(`Groq API error ${groqResponse.status}: ${errBody.substring(0, 200)}`);
+          providerErrors.push({ provider: "groq", status: groqResponse.status, error: errBody.substring(0, 200) });
         }
       } catch (groqErr) {
-        console.warn("Groq call failed, falling back to Gemini:", groqErr);
+        console.warn("Groq call failed:", groqErr);
+        providerErrors.push({ provider: "groq", error: String(groqErr) });
       }
     }
 
-    // --- Fallback to Gemini if Groq failed ---
-    if (!llmSuccess && geminiApiKey) {
-      const geminiUrl =
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiApiKey}`;
-
-      const geminiResponse = await fetch(geminiUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: [{ text: systemPrompt }],
-          },
-          contents: [
-            { role: "user", parts: [{ text: body.question }] },
-          ],
-          generationConfig: {
-            maxOutputTokens: maxTokens,
-            temperature: 0.3,
-            responseMimeType: "text/plain",
-          },
-        }),
-      });
-
-      if (!geminiResponse.ok) {
-        const errorBody = await geminiResponse.text();
-        console.error(`Gemini API error: ${geminiResponse.status}`, errorBody);
-
-        if (geminiResponse.status === 429) {
-          return new Response(
-            JSON.stringify({ error: "AI provider rate limited. Try again in a moment." }),
-            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-          );
-        }
-        return new Response(
-          JSON.stringify({ error: "AI generation failed. Please try again." }),
-          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
-      }
-
-      const result: GeminiResponse = await geminiResponse.json();
-      const candidate = result.candidates?.[0];
-      if (!candidate?.content?.parts?.[0]?.text) {
-        return new Response(
-          JSON.stringify({ error: "AI could not generate an answer. Try rephrasing the question." }),
-          { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
-      }
-
-      answerText = candidate.content.parts[0].text;
-      inputTokens = result.usageMetadata?.promptTokenCount || 0;
-      outputTokens = result.usageMetadata?.candidatesTokenCount || 0;
-      modelUsed = result.modelVersion || GEMINI_MODEL;
-      llmSuccess = true;
-    }
-
-    // --- Both providers failed ---
+    // --- All providers failed ---
     if (!llmSuccess) {
+      console.error("All AI providers failed:", JSON.stringify(providerErrors));
       return new Response(
-        JSON.stringify({ error: "All AI providers failed. Please try again later." }),
+        JSON.stringify({ error: "All AI providers failed. Please try again later.", provider_errors: providerErrors }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }

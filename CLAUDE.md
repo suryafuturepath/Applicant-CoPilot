@@ -43,8 +43,30 @@ Chrome extension copilot for job applicants. Forked from JobMatchAI (MIT), enhan
 - Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`
 - Feature branches: `feat/description`
 
+## Skill Workflow
+
+### Standard feature pipeline
+`/cto` → `/explore` → `/plan` → `/execute` → `/peer-review` → `/document`
+
+### Domain specialists (invoke during any workflow stage)
+- `/chrome-ext` — Chrome extension architecture, service workers, messaging, content scripts
+- `/supabase-arch` — Database schema, RLS, Edge Functions, auth flows, migrations
+
+### Quick patterns
+- **Bug fix**: `/explore` → `/execute` → `/review`
+- **Architecture decision**: `/cto` (+ domain specialist if needed)
+- **Quality gate**: `/peer-review` (4 personas debate to consensus)
+- **Focused review**: `/review-ux`, `/review-perf`, `/review-standards`, or `/review-test`
+- **Capture idea mid-flow**: `/create-issue`
+- **Learn a concept**: `/learn`
+
+### How it works
+- All skills read `PROJECT-CONTEXT.md` first — that's what grounds them in this tech stack
+- Plan files (`PLAN-*.md`) pass context from `/plan` to `/execute` to `/review`
+- CTO decides which stages to activate — not every task needs all 6 stages
+
 ## Repositories
 - **GitHub**: https://github.com/suryafuturepath/Applicant-CoPilot
 
 ## Current Phase
-Phase 4.5 complete. Key additions since Phase 3: Ask AI chat tab (in-panel, per-URL persistence), ATS Resume redesign (2-phase build→result, full preview tab), 8 configurable system prompts in AI Settings, token budget sliders, Home nav tab. Next: Phase 5 — Ship & Scale (admin prompt management, WXT migration, billing). See PROJECT-CONTEXT.md for full status.
+Phase 5a complete (2026-04-01). Edge Function connectivity fixed — root cause was `verify_jwt = true` on Supabase gateway rejecting Chrome extension JWTs. Fixed with `--no-verify-jwt` deploy (function still validates auth via `getUser()`). Added 4-layer diagnostic health check, `[EDGE]` logging on all 11 handlers, provider error reporting. Edge Function working: OpenRouter → Groq → Gemini fallback chain. Interview Prep feature built but uncommitted. Next: Phase 5b — Ship & Scale. See PROJECT-CONTEXT.md for full status.

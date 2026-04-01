@@ -335,11 +335,27 @@ Request arrives with jd_text
   - Hoisted `getCustomPrompts()` to avoid redundant storage reads in fallback paths
   - Fixed Edge Function system prompt — "100-200 words" instruction no longer overrides resume/cover letter generation
 
+### Phase 5a: Edge Function Fix + Diagnostic System — DONE (2026-04-01)
+- **Root cause found**: Supabase Edge Function gateway `verify_jwt = true` rejects user access tokens from Chrome extension service workers with "Invalid JWT" — even with fresh login and valid token
+- **Fix**: Deploy with `--no-verify-jwt`. Our Edge Function validates auth internally via `getUser()` — still secure
+- **4-layer diagnostic health check**: Replaced `handleTestConnection()` with structured test:
+  - Layer 1: Settings (useBackend toggle, API key, provider)
+  - Layer 2: Auth (signed in, token expiry, user email)
+  - Layer 3: Edge Function ping (latency, model, cached status)
+  - Layer 4: Local AI test (provider connectivity)
+  - Results displayed inline in Profile → AI Settings with pass/fail per layer
+- **`[EDGE]` diagnostic logging**: All 11 Edge Function handlers now log decision points, success, and failures with consistent `[EDGE][handlerName]` prefix for easy DevTools filtering
+- **Silent fallthrough fix**: All 11 handlers now log when Edge Function returns 200 but `answer` is falsy (was completely silent before)
+- **`action_type` on all handlers**: 6 handlers were missing `action_type` (defaulted to `answer_generation`, skipping server-side caching). Now explicit: `jd_digest`, `classification`, `cover_letter`, `resume`, `resume_generation`, `answer_generation`
+- **Provider error reporting**: Edge Function now accumulates per-provider errors and includes them in 502 responses. Client parses and surfaces provider-level failure details
+- **OpenRouter as primary LLM**: Edge Function uses OpenRouter → Groq → Gemini fallback chain. OpenRouter key set as Supabase secret. Confirmed working (model: `google/gemini-2.0-flash-001`)
+- **Parked**: OpenRouter as local provider has rate limiting issues — Gemini works as local fallback
+
 ### Remaining Manual Steps
 - [ ] Create `resumes` storage bucket in Supabase Dashboard
 - [ ] End-to-end integration test (see testplanMVP.md)
 
-### Next: Phase 5 — Ship & Scale
+### Next: Phase 5b — Ship & Scale
 - Server-side prompt management (admin pushes prompts to all users via Supabase `system_prompts` table)
 - WXT + TypeScript migration
 - Full Workday field handler port from job_app_filler

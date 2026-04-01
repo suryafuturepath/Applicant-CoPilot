@@ -1404,6 +1404,239 @@ Write in a helpful, conversational tone. No corporate jargon.`;
   return messages;
 }
 
+// ─── Prompt: Interview Questions ─────────────────────────────────────
+//
+// Generates categorized practice interview questions tailored to a specific
+// role, using the JD digest + candidate profile + analysis results.
+
+/**
+ * Builds a prompt that generates 10-12 categorized interview practice questions.
+ *
+ * @param {Object|string} profile     - Sliced profile (full experience for STAR stories).
+ * @param {Object}        jdDigest    - Structured JD digest object.
+ * @param {Object}        analysis    - Job analysis with matchingSkills, missingSkills, insights.
+ * @param {string[]}      categories  - Categories to include (defaults to all 4).
+ * @param {string}        [promptOverride] - Custom prompt override.
+ * @returns {Array<{role: string, content: string}>} Messages array.
+ */
+function buildInterviewQuestionsPrompt(profile, jdDigest, analysis, categories, promptOverride) {
+  const profileText = typeof profile === 'string' ? profile : JSON.stringify(profile, null, 2);
+  const digestText = jdDigest ? JSON.stringify(jdDigest, null, 2) : '';
+  const analysisText = analysis ? JSON.stringify({
+    matchScore: analysis.matchScore,
+    matchingSkills: analysis.matchingSkills,
+    missingSkills: analysis.missingSkills,
+    insights: analysis.insights
+  }, null, 2) : '';
+
+  const cats = categories || ['behavioral', 'technical', 'situational', 'role-specific'];
+  const catList = cats.join(', ');
+
+  const instructions = promptOverride || `You are a senior interview coach preparing a candidate for a specific role.
+Generate practice interview questions tailored to this exact role and candidate.
+
+CATEGORIES TO INCLUDE: ${catList}
+Generate 10-12 questions total distributed across the requested categories:
+- behavioral (3): STAR-method questions targeting skills relevant to this role. Reference the candidate's actual experience to make questions realistic.
+- technical (3): Based on the tech stack, key requirements, and domain knowledge. Calibrate difficulty to the seniority level (${jdDigest?.seniority || 'mid'}).
+- situational (2-3): "What would you do if..." scenarios reflecting real challenges in this role/industry.
+- role-specific (2-3): Questions a hiring manager for THIS role at THIS company would likely ask, based on responsibilities and culture signals.
+
+For each question include 3-4 key points that a strong answer should cover.
+Assign a time limit in seconds: behavioral=120, technical=150, situational=120, role-specific=90.
+
+CRITICAL: Return ONLY valid JSON. No markdown fences. No explanation.
+{
+  "questions": [
+    {
+      "category": "behavioral|technical|situational|role-specific",
+      "difficulty": "easy|medium|hard",
+      "question": "The interview question",
+      "keyPoints": ["Key point 1", "Key point 2", "Key point 3"],
+      "timeLimitSec": 120
+    }
+  ]
+}`;
+
+  const userContent = [
+    `${instructions}`,
+    digestText ? `\n--- JOB DESCRIPTION ---\n${digestText}` : '',
+    profileText ? `\n--- CANDIDATE PROFILE ---\n${profileText}` : '',
+    analysisText ? `\n--- MATCH ANALYSIS ---\n${analysisText}` : ''
+  ].filter(Boolean).join('\n');
+
+  return [{ role: 'user', content: userContent }];
+}
+
+// ─── Prompt: Answer Evaluation ──────────────────────────────────────
+//
+// Evaluates a candidate's practice answer against a specific interview question,
+// providing a score, strengths, improvements, and a sample answer.
+
+/**
+ * Builds a prompt that evaluates a practice interview answer.
+ *
+ * @param {Object|string} profile     - Sliced profile for context.
+ * @param {Object}        jdDigest    - Structured JD digest object.
+ * @param {string}        question    - The interview question that was asked.
+ * @param {string}        answer      - The candidate's practice answer.
+ * @param {string[]}      keyPoints   - Expected key points for a strong answer.
+ * @param {number}        timeSpent   - Seconds the candidate took to answer.
+ * @param {string}        [promptOverride] - Custom prompt override.
+ * @returns {Array<{role: string, content: string}>} Messages array.
+ */
+function buildAnswerEvaluationPrompt(profile, jdDigest, question, answer, keyPoints, timeSpent, promptOverride) {
+  const profileText = typeof profile === 'string' ? profile : JSON.stringify(profile, null, 2);
+  const digestText = jdDigest ? JSON.stringify(jdDigest, null, 2) : '';
+  const keyPointsText = keyPoints ? keyPoints.join('\n- ') : '';
+
+  const instructions = promptOverride || `You are a senior interview coach evaluating a practice answer.
+Be honest but constructive. Score based on relevance, specificity, structure, and alignment with the role.
+
+SCORING SCALE:
+- 1-3: Weak (vague, off-topic, no specifics, no STAR structure)
+- 4-6: Adequate (right direction, needs more depth, specifics, or structure)
+- 7-8: Strong (specific examples, well-structured, relevant to role)
+- 9-10: Excellent (compelling, perfectly structured, demonstrates clear fit)
+
+TIME CONTEXT: The candidate took ${timeSpent} seconds to answer.${timeSpent < 30 ? ' This was very quick — note if the answer feels rushed or incomplete.' : ''}${timeSpent > 180 ? ' This took longer than typical — note if the answer is too verbose.' : ''}
+
+CRITICAL: Return ONLY valid JSON. No markdown fences.
+{
+  "score": 7,
+  "strengths": ["What was good about this answer"],
+  "improvements": ["Specific, actionable feedback to improve"],
+  "sampleAnswer": "A strong 150-word sample answer for comparison",
+  "relevantSkills": ["skills this answer demonstrates"],
+  "shouldFollowUp": false
+}
+
+Set "shouldFollowUp": true ONLY when score < 5 (the candidate needs to practice this area more).`;
+
+  const userContent = [
+    instructions,
+    digestText ? `\n--- JOB CONTEXT ---\n${digestText}` : '',
+    profileText ? `\n--- CANDIDATE PROFILE ---\n${profileText}` : '',
+    `\n--- QUESTION ---\n${question}`,
+    keyPointsText ? `\n--- EXPECTED KEY POINTS ---\n- ${keyPointsText}` : '',
+    `\n--- CANDIDATE'S ANSWER ---\n${answer}`
+  ].filter(Boolean).join('\n');
+
+  return [{ role: 'user', content: userContent }];
+}
+
+// ─── Prompt: Follow-Up Question ─────────────────────────────────────
+//
+// Generates a targeted follow-up question when a candidate scores poorly,
+// drilling deeper into the specific gap identified.
+
+/**
+ * Builds a prompt that generates one adaptive follow-up question.
+ *
+ * @param {Object|string} profile         - Sliced profile for context.
+ * @param {Object}        jdDigest        - Structured JD digest object.
+ * @param {string}        originalQuestion - The question the candidate struggled with.
+ * @param {string}        userAnswer       - The candidate's weak answer.
+ * @param {Object}        evaluation       - The evaluation result (score, improvements).
+ * @param {string}        category         - The category of the original question.
+ * @param {string}        [promptOverride] - Custom prompt override.
+ * @returns {Array<{role: string, content: string}>} Messages array.
+ */
+function buildFollowUpQuestionPrompt(profile, jdDigest, originalQuestion, userAnswer, evaluation, category, promptOverride) {
+  const profileText = typeof profile === 'string' ? profile : JSON.stringify(profile, null, 2);
+  const digestText = jdDigest ? JSON.stringify(jdDigest, null, 2) : '';
+
+  const instructions = promptOverride || `You are a senior interview coach. The candidate struggled with a practice question.
+Generate ONE targeted follow-up question that drills deeper into their specific weak area.
+
+The follow-up should:
+- Stay in the same category (${category})
+- Target the specific gap identified in the evaluation
+- Be slightly more focused/specific than the original question
+- Help the candidate build confidence in this area
+
+CRITICAL: Return ONLY valid JSON. No markdown fences.
+{
+  "question": "The follow-up interview question",
+  "keyPoints": ["Key point 1", "Key point 2", "Key point 3"],
+  "difficulty": "easy|medium|hard",
+  "timeLimitSec": 120
+}`;
+
+  const userContent = [
+    instructions,
+    digestText ? `\n--- JOB CONTEXT ---\n${digestText}` : '',
+    profileText ? `\n--- CANDIDATE PROFILE ---\n${profileText}` : '',
+    `\n--- ORIGINAL QUESTION ---\n${originalQuestion}`,
+    `\n--- CANDIDATE'S ANSWER (scored ${evaluation.score}/10) ---\n${userAnswer}`,
+    `\n--- AREAS TO IMPROVE ---\n- ${(evaluation.improvements || []).join('\n- ')}`
+  ].filter(Boolean).join('\n');
+
+  return [{ role: 'user', content: userContent }];
+}
+
+// ─── Prompt: Positioning Advice ─────────────────────────────────────
+//
+// Generates strategic interview positioning advice based on the full
+// practice session results, profile, and JD context.
+
+/**
+ * Builds a prompt for comprehensive positioning advice after a practice session.
+ *
+ * @param {Object|string} profile        - Full profile for context.
+ * @param {Object}        jdDigest       - Structured JD digest object.
+ * @param {Object}        analysis       - Job analysis results.
+ * @param {Object}        sessionSummary - Summary of the practice session results.
+ * @param {string}        [promptOverride] - Custom prompt override.
+ * @returns {Array<{role: string, content: string}>} Messages array.
+ */
+function buildPositioningAdvicePrompt(profile, jdDigest, analysis, sessionSummary, promptOverride) {
+  const profileText = typeof profile === 'string' ? profile : JSON.stringify(profile, null, 2);
+  const digestText = jdDigest ? JSON.stringify(jdDigest, null, 2) : '';
+  const analysisText = analysis ? JSON.stringify({
+    matchScore: analysis.matchScore,
+    matchingSkills: analysis.matchingSkills,
+    missingSkills: analysis.missingSkills,
+    insights: analysis.insights
+  }, null, 2) : '';
+  const sessionText = JSON.stringify(sessionSummary, null, 2);
+
+  const instructions = promptOverride || `You are a senior interview strategist. Based on the candidate's practice session results, provide comprehensive positioning advice for the actual interview.
+
+Provide advice in these sections (use markdown headers):
+
+## Top 3 STAR Stories to Prepare
+Map the candidate's real experiences to likely interview questions. Each story should have: Situation, Task, Action, Result.
+
+## Key Themes to Weave Into Answers
+3-4 recurring themes that connect the candidate's background to this specific role.
+
+## Addressing Gaps Proactively
+For each identified weakness, provide a strategy to acknowledge it positively and pivot to strengths.
+
+## Opening & Closing Statements
+- A strong self-introduction tailored to this role (30 seconds)
+- A closing statement that reinforces fit
+
+## Questions to Ask the Interviewer
+5 thoughtful questions based on the company culture signals and role responsibilities.
+
+## Time Management Tips
+Based on the candidate's answer timing patterns, advice on pacing and structure.
+
+Be specific — reference the actual job, company, and the candidate's real experience. No generic advice.`;
+
+  const userContent = [
+    instructions,
+    digestText ? `\n--- JOB DESCRIPTION ---\n${digestText}` : '',
+    profileText ? `\n--- CANDIDATE PROFILE ---\n${profileText}` : '',
+    analysisText ? `\n--- MATCH ANALYSIS ---\n${analysisText}` : '',
+    `\n--- PRACTICE SESSION RESULTS ---\n${sessionText}`
+  ].filter(Boolean).join('\n');
+
+  return [{ role: 'user', content: userContent }];
+}
+
 // ─── Exports (for service worker import) ────────────────────────────
 //
 // All public symbols are exported as named exports for use by background.js.
@@ -1425,6 +1658,10 @@ export {
   buildResumeGeneratePrompt,
   buildTestPrompt,
   buildChatPrompt,
+  buildInterviewQuestionsPrompt,
+  buildAnswerEvaluationPrompt,
+  buildFollowUpQuestionPrompt,
+  buildPositioningAdvicePrompt,
   DEFAULT_MODEL,
   DEFAULT_TEMPERATURE,
   DEFAULT_PROVIDER
