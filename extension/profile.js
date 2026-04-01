@@ -1555,6 +1555,9 @@ async function saveSettings() {
     }
   };
   await sendMessage({ type: 'SAVE_SETTINGS', settings });
+  // Save data consent separately (its own storage key + Supabase sync)
+  const dataConsent = document.getElementById('sDataConsent').checked;
+  await sendMessage({ type: 'SET_DATA_CONSENT', consented: dataConsent });
 }
 
 // ─── Pre-fill intake from profile data ───────────────────────────────────────
@@ -1758,6 +1761,11 @@ async function init() {
       updateProviderUI(settings.provider || 'anthropic');
       document.getElementById('sApiKey').value  = settings.apiKey || '';
       document.getElementById('sUseBackend').checked = settings.useBackend !== false;
+      // Load data consent state
+      try {
+        const consent = await sendMessage({ type: 'GET_DATA_CONSENT' });
+        document.getElementById('sDataConsent').checked = consent.consented === true;
+      } catch (_) {}
       document.getElementById('sModel').value   = settings.model  || 'claude-sonnet-4-20250514';
       // Nullish coalescing: treat null/undefined as 0.3, but allow stored 0
       document.getElementById('sTemp').value    = settings.temperature ?? 0.3;

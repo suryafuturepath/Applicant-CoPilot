@@ -210,8 +210,8 @@ export async function callEdgeFunction(functionName, body) {
     throw new Error('Not signed in. Please sign in to use this feature.');
   }
 
-  console.log('[EDGE][callEdgeFunction] Fetching:', `${SUPABASE_URL}/functions/v1/${functionName}`, 'action:', body?.action_type || 'default');
-  console.log('[EDGE][callEdgeFunction] Token preview:', session.access_token?.substring(0, 30) + '...', 'expires_at:', session.expires_at);
+  // Verbose logging removed for production. Enable manually for debugging:
+  // console.log('[EDGE][callEdgeFunction] Fetching:', `${SUPABASE_URL}/functions/v1/${functionName}`, 'action:', body?.action_type);
 
   const response = await fetch(
     `${SUPABASE_URL}/functions/v1/${functionName}`,
@@ -226,7 +226,7 @@ export async function callEdgeFunction(functionName, body) {
     }
   );
 
-  console.log('[EDGE][callEdgeFunction] Response status:', response.status);
+  // console.log('[EDGE][callEdgeFunction] Response status:', response.status);
 
   // Check status FIRST, then parse — response might not be JSON (e.g. HTML error page)
   if (!response.ok) {

@@ -74,6 +74,9 @@ import { deterministicFieldMatcher } from './deterministicMatcher.js';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
+// Set to true to enable verbose [EDGE] diagnostic logging in service worker console
+const DEBUG = false;
+
 const MAX_JD_LENGTH_ANALYSIS = 8000;
 const MAX_JD_LENGTH_GENERATION = 6000;
 const MAX_SAVED_JOBS = 100;
@@ -582,7 +585,7 @@ async function handleDigestJD(rawJD, jobTitle, company, url) {
   console.log('[EDGE][digestJD] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
   if (useBackend) {
     try {
-      console.log('[EDGE][digestJD] Calling Edge Function...');
+      if (DEBUG) console.log('[EDGE][digestJD] Calling Edge Function...');
       const result = await callEdgeFunction('generate-answer', {
         question: `Extract a structured digest from this job description. Return ONLY valid JSON with these fields: role_title, company, seniority, employment_type, location, key_requirements (max 8), nice_to_haves (max 5), responsibilities (max 6), tech_stack, soft_skills (max 5), culture_signals (max 3), ats_keywords (max 15 exact phrases), years_experience, education, salary_range, industry.`,
         jd_text: rawJD,
@@ -592,7 +595,7 @@ async function handleDigestJD(rawJD, jobTitle, company, url) {
         action_type: 'jd_digest',
       });
       if (result?.answer) {
-        console.log('[EDGE][digestJD] Success, model:', result.model, 'cached:', result.cached);
+        if (DEBUG) console.log('[EDGE][digestJD] Success, model:', result.model, 'cached:', result.cached);
         const digest = parseJSONResponse(result.answer);
         if (url) await setCachedDigest(url, digest);
         return digest;
@@ -909,7 +912,7 @@ async function handleAnalyzeJob(jobDescription, jobTitle, company, url) {
   console.log('[EDGE][analyzeJob] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
   if (useBackend) {
     try {
-      console.log('[EDGE][analyzeJob] Calling Edge Function...');
+      if (DEBUG) console.log('[EDGE][analyzeJob] Calling Edge Function...');
       const richContext = await buildRichContextForPrompt();
       const settings = await getSettings();
       const result = await callEdgeFunction('generate-answer', {
@@ -933,7 +936,7 @@ async function handleAnalyzeJob(jobDescription, jobTitle, company, url) {
       });
 
       if (result?.answer) {
-        console.log('[EDGE][analyzeJob] Success, model:', result.model, 'cached:', result.cached);
+        if (DEBUG) console.log('[EDGE][analyzeJob] Success, model:', result.model, 'cached:', result.cached);
         const parsed = parseJSONResponse(result.answer);
         parsed.jdDigest = digest || null;
         return parsed;
@@ -989,7 +992,7 @@ async function handleGenerateAutofill(formFields) {
   console.log('[EDGE][autofill] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
   if (useBackend) {
     try {
-      console.log('[EDGE][autofill] Calling Edge Function...');
+      if (DEBUG) console.log('[EDGE][autofill] Calling Edge Function...');
       const richContext = await buildRichContextForPrompt();
       const fieldQuestions = formFields.map(f =>
         `Form field "${f.label || f.name}" (type: ${f.type}${f.options ? ', options: ' + f.options.join(', ') : ''})`
@@ -1014,7 +1017,7 @@ async function handleGenerateAutofill(formFields) {
       });
 
       if (result?.answer) {
-        console.log('[EDGE][autofill] Success, model:', result.model);
+        if (DEBUG) console.log('[EDGE][autofill] Success, model:', result.model);
         return parseJSONResponse(result.answer);
       } else {
         console.warn('[EDGE][autofill] Got 200 but answer is falsy:', JSON.stringify({ model: result?.model, cached: result?.cached, keys: Object.keys(result || {}) }));
@@ -1261,7 +1264,7 @@ async function handleGenerateCoverLetter(jobDescription, analysis, url) {
   console.log('[EDGE][coverLetter] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
   if (useBackend) {
     try {
-      console.log('[EDGE][coverLetter] Calling Edge Function...');
+      if (DEBUG) console.log('[EDGE][coverLetter] Calling Edge Function...');
       const richContext = await buildRichContextForPrompt();
       const settings = await getSettings();
       const edgeResult = await callEdgeFunction('generate-answer', {
@@ -1285,7 +1288,7 @@ async function handleGenerateCoverLetter(jobDescription, analysis, url) {
       });
 
       if (edgeResult?.answer) {
-        console.log('[EDGE][coverLetter] Success, model:', edgeResult.model);
+        if (DEBUG) console.log('[EDGE][coverLetter] Success, model:', edgeResult.model);
         return { text: edgeResult.answer };
       } else {
         console.warn('[EDGE][coverLetter] Got 200 but answer is falsy:', JSON.stringify({ model: edgeResult?.model, cached: edgeResult?.cached, keys: Object.keys(edgeResult || {}) }));
@@ -1356,7 +1359,7 @@ async function handleRewriteBullets(jobDescription, missingSkills, analysis, url
   console.log('[EDGE][rewriteBullets] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
   if (useBackend) {
     try {
-      console.log('[EDGE][rewriteBullets] Calling Edge Function...');
+      if (DEBUG) console.log('[EDGE][rewriteBullets] Calling Edge Function...');
       const richContext = await buildRichContextForPrompt();
       const edgeResult = await callEdgeFunction('generate-answer', {
         question: `Rewrite my resume bullets to better target this job. Focus on these missing skills: ${(missingSkills || []).join(', ')}. Return a JSON array of {job, original, improved} objects.
@@ -1377,7 +1380,7 @@ ${richContext}`,
         },
       });
       if (edgeResult?.answer) {
-        console.log('[EDGE][rewriteBullets] Success, model:', edgeResult.model);
+        if (DEBUG) console.log('[EDGE][rewriteBullets] Success, model:', edgeResult.model);
         try { return parseJSONResponse(edgeResult.answer); }
         catch (_) { throw new Error('AI response was truncated or invalid. Try again.'); }
       } else {
@@ -1453,7 +1456,7 @@ async function handleGenerateResume(jobDescription, jobTitle, company, customIns
   console.log('[EDGE][generateResume] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
   if (useBackend) {
     try {
-      console.log('[EDGE][generateResume] Calling Edge Function...');
+      if (DEBUG) console.log('[EDGE][generateResume] Calling Edge Function...');
       const richContext = await buildRichContextForPrompt();
       const edgeResult = await callEdgeFunction('generate-answer', {
         question: `${prompts.resume}${customInstructions ? '\nAdditional: ' + customInstructions : ''}\n\nAPPLICANT CONTEXT:\n${richContext}`,
@@ -1478,7 +1481,7 @@ async function handleGenerateResume(jobDescription, jobTitle, company, customIns
       });
 
       if (edgeResult?.answer) {
-        console.log('[EDGE][generateResume] Success, model:', edgeResult.model);
+        if (DEBUG) console.log('[EDGE][generateResume] Success, model:', edgeResult.model);
         return { text: edgeResult.answer };
       } else {
         console.warn('[EDGE][generateResume] Got 200 but answer is falsy:', JSON.stringify({ model: edgeResult?.model, cached: edgeResult?.cached, keys: Object.keys(edgeResult || {}) }));
@@ -1558,7 +1561,7 @@ async function handleChat(message, history, jobUrl) {
   console.log('[EDGE][chat] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
   if (useBackend) {
     try {
-      console.log('[EDGE][chat] Calling Edge Function...');
+      if (DEBUG) console.log('[EDGE][chat] Calling Edge Function...');
       const systemContext = [
         profileSummary ? `APPLICANT:\n${profileSummary}` : '',
         richContext ? `CONTEXT:\n${richContext}` : '',
@@ -1575,7 +1578,7 @@ async function handleChat(message, history, jobUrl) {
       });
 
       if (result?.answer) {
-        console.log('[EDGE][chat] Success, model:', result.model);
+        if (DEBUG) console.log('[EDGE][chat] Success, model:', result.model);
         return { reply: result.answer };
       } else {
         console.warn('[EDGE][chat] Got 200 but answer is falsy:', JSON.stringify({ model: result?.model, cached: result?.cached, keys: Object.keys(result || {}) }));
@@ -1598,6 +1601,176 @@ async function handleChat(message, history, jobUrl) {
   });
 
   return { reply: result };
+}
+
+
+// ─── Seriousness Score ──────────────────────────────────────────────────────
+//
+// Computes a 0-100 "seriousness score" from local activity data.
+// Weighted: prep (35%), applications (30%), research (25%), engagement (10%).
+
+async function computeSeriousnessScore() {
+  const [savedResult, appliedResult, prepResult, chatResult, activityResult] = await Promise.all([
+    chrome.storage.local.get('savedJobs'),
+    chrome.storage.local.get('appliedJobs'),
+    chrome.storage.local.get('interviewPrepSessions'),
+    chrome.storage.local.get('ac_chatHistories'),
+    chrome.storage.local.get('ac_activityCounters'),
+  ]);
+
+  const savedJobs = savedResult.savedJobs || [];
+  const appliedJobs = appliedResult.appliedJobs || [];
+  const prepSessions = prepResult.interviewPrepSessions || {};
+  const chatHistories = chatResult.ac_chatHistories || {};
+  const counters = activityResult.ac_activityCounters || {};
+
+  // --- Gather raw metrics ---
+  const jobsSaved = savedJobs.length;
+  const jobsApplied = appliedJobs.length + savedJobs.filter(j => j.applied).length;
+  const jobsAnalyzed = counters.jobsAnalyzed || 0;
+
+  const sessions = Object.values(prepSessions);
+  const prepSessionCount = sessions.length;
+  const prepTotalTimeSec = sessions.reduce((sum, s) => {
+    const answered = (s.questions || []).filter(q => q.timeSpentSec != null);
+    return sum + answered.reduce((t, q) => t + (q.timeSpentSec || 0), 0);
+  }, 0);
+  const prepTotalMins = prepTotalTimeSec / 60;
+
+  const allPrepScores = sessions.flatMap(s =>
+    (s.questions || []).filter(q => q.evaluation?.score).map(q => q.evaluation.score)
+  );
+  const prepAvgScore = allPrepScores.length > 0
+    ? allPrepScores.reduce((a, b) => a + b, 0) / allPrepScores.length : 0;
+
+  const chatMessagesSent = Object.values(chatHistories)
+    .reduce((sum, msgs) => sum + (Array.isArray(msgs) ? msgs.filter(m => m.role === 'user').length : 0), 0);
+
+  const coverLetters = counters.coverLettersGenerated || 0;
+  const resumes = counters.resumesGenerated || 0;
+
+  // Recency: days since last activity
+  const lastActive = counters.lastActiveAt || 0;
+  const daysSinceActive = lastActive ? (Date.now() - lastActive) / (1000 * 60 * 60 * 24) : 999;
+
+  // --- Apply scoring rules ---
+  const tier = (val, t1, t2, t3, s1, s2, s3, s4) =>
+    val >= t3 ? s4 : val >= t2 ? s3 : val >= t1 ? s2 : val > 0 ? s1 : 0;
+
+  const factors = {
+    jobsAnalyzed:   tier(jobsAnalyzed, 1, 4, 8, 50, 80, 100, 100),
+    jobsSaved:      tier(jobsSaved, 1, 4, 10, 50, 80, 100, 100),
+    appliedRatio:   jobsSaved > 0 ? Math.min(100, Math.round((jobsApplied / jobsSaved) * 100)) : 0,
+    prepSessions:   tier(prepSessionCount, 1, 2, 4, 40, 70, 100, 100),
+    prepTime:       tier(prepTotalMins, 1, 15, 60, 30, 70, 100, 100),
+    prepAvgScore:   Math.min(100, Math.round(prepAvgScore * 10)),
+    coverLetters:   tier(coverLetters, 1, 3, 5, 60, 100, 100, 100),
+    resumes:        tier(resumes, 1, 3, 5, 60, 100, 100, 100),
+    recency:        daysSinceActive < 1 ? 100 : daysSinceActive < 3 ? 80 : daysSinceActive < 7 ? 50 : 20,
+  };
+
+  // Weighted sum
+  const score = Math.round(
+    factors.jobsAnalyzed * 0.15 +
+    factors.jobsSaved    * 0.10 +
+    factors.appliedRatio * 0.15 +
+    factors.prepSessions * 0.20 +
+    factors.prepTime     * 0.15 +
+    factors.prepAvgScore * 0.10 +
+    factors.coverLetters * 0.05 +
+    factors.resumes      * 0.05 +
+    factors.recency      * 0.05
+  );
+
+  const result = {
+    score: Math.max(0, Math.min(100, score)),
+    factors,
+    raw: { jobsAnalyzed, jobsSaved, jobsApplied, prepSessionCount, prepTotalTimeSec, prepAvgScore: Math.round(prepAvgScore * 10) / 10, chatMessagesSent, coverLetters, resumes },
+    computedAt: Date.now(),
+  };
+
+  await chrome.storage.local.set({ seriousnessScore: result });
+  return result;
+}
+
+// Increment an activity counter and mark last active timestamp
+async function incrementActivityCounter(key) {
+  const result = await chrome.storage.local.get('ac_activityCounters');
+  const counters = result.ac_activityCounters || {};
+  counters[key] = (counters[key] || 0) + 1;
+  counters.lastActiveAt = Date.now();
+  await chrome.storage.local.set({ ac_activityCounters: counters });
+}
+
+
+// ─── Data Sync (consent-gated) ───────────────────────────────────────────────
+
+let _lastSyncAt = 0;
+const SYNC_DEBOUNCE_MS = 30000; // Max once per 30 seconds
+
+async function syncActivityToSupabase() {
+  // Consent gate
+  const consentResult = await chrome.storage.local.get('dataConsent');
+  if (consentResult.dataConsent !== true) return;
+
+  // Debounce
+  if (Date.now() - _lastSyncAt < SYNC_DEBOUNCE_MS) return;
+  _lastSyncAt = Date.now();
+
+  if (!(await isSignedIn())) return;
+
+  try {
+    const client = await getAuthenticatedClient();
+    const user = await getUser();
+    if (!client || !user) return;
+
+    const scoreData = await computeSeriousnessScore();
+    const r = scoreData.raw;
+
+    await client.from('candidate_activity').upsert({
+      profile_id: user.id,
+      jobs_analyzed: r.jobsAnalyzed,
+      jobs_saved: r.jobsSaved,
+      jobs_applied: r.jobsApplied,
+      avg_match_score: 0, // TODO: compute from saved jobs
+      cover_letters_generated: r.coverLetters,
+      resumes_generated: r.resumes,
+      prep_sessions: r.prepSessionCount,
+      prep_total_time_sec: r.prepTotalTimeSec,
+      prep_avg_score: r.prepAvgScore,
+      chat_messages_sent: r.chatMessagesSent,
+      seriousness_score: scoreData.score,
+      last_active_at: new Date().toISOString(),
+    }, { onConflict: 'profile_id' });
+  } catch (err) {
+    console.warn('[sync] Activity sync failed:', err.message);
+  }
+}
+
+async function syncJDIntelligence(digest) {
+  const consentResult = await chrome.storage.local.get('dataConsent');
+  if (consentResult.dataConsent !== true) return;
+  if (!(await isSignedIn())) return;
+  if (!digest) return;
+
+  try {
+    const client = await getAuthenticatedClient();
+    const user = await getUser();
+    if (!client || !user) return;
+
+    await client.from('jd_intelligence').insert({
+      profile_id: user.id,
+      role_title: digest.role_title || null,
+      company: digest.company || null,
+      seniority: digest.seniority || null,
+      tech_stack: digest.tech_stack || [],
+      key_requirements: digest.key_requirements || [],
+      industry: digest.industry || null,
+      location: digest.location || null,
+    });
+  } catch (err) {
+    console.warn('[sync] JD intelligence sync failed:', err.message);
+  }
 }
 
 
@@ -1731,7 +1904,7 @@ async function handleGenerateInterviewQuestions(jobId, jobUrl, categories) {
   console.log('[EDGE][interviewQuestions] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
   if (useBackend) {
     try {
-      console.log('[EDGE][interviewQuestions] Calling Edge Function...');
+      if (DEBUG) console.log('[EDGE][interviewQuestions] Calling Edge Function...');
       const result = await callEdgeFunction('generate-answer', {
         question: messages[0].content,
         action_type: 'interview_prep',
@@ -1739,7 +1912,7 @@ async function handleGenerateInterviewQuestions(jobId, jobUrl, categories) {
       });
 
       if (result?.answer) {
-        console.log('[EDGE][interviewQuestions] Success, model:', result.model);
+        if (DEBUG) console.log('[EDGE][interviewQuestions] Success, model:', result.model);
         questionsData = parseJSONResponse(result.answer);
       } else {
         console.warn('[EDGE][interviewQuestions] Got 200 but answer is falsy:', JSON.stringify({ model: result?.model, cached: result?.cached, keys: Object.keys(result || {}) }));
@@ -1828,14 +2001,14 @@ async function handleEvaluateAnswer(jobId, questionId, question, userAnswer, cat
   console.log('[EDGE][evaluateAnswer] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
   if (useBackend) {
     try {
-      console.log('[EDGE][evaluateAnswer] Calling Edge Function...');
+      if (DEBUG) console.log('[EDGE][evaluateAnswer] Calling Edge Function...');
       const result = await callEdgeFunction('generate-answer', {
         question: messages[0].content,
         action_type: 'interview_prep',
         max_tokens: settings.tokenBudgets.interviewPrep,
       });
       if (result?.answer) {
-        console.log('[EDGE][evaluateAnswer] Success, model:', result.model);
+        if (DEBUG) console.log('[EDGE][evaluateAnswer] Success, model:', result.model);
         evalData = parseJSONResponse(result.answer);
       } else {
         console.warn('[EDGE][evaluateAnswer] Got 200 but answer is falsy:', JSON.stringify({ model: result?.model, cached: result?.cached, keys: Object.keys(result || {}) }));
@@ -1918,14 +2091,14 @@ async function handleGenerateFollowUp(jobId, parentQuestionId, question, userAns
   console.log('[EDGE][followUp] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
   if (useBackend) {
     try {
-      console.log('[EDGE][followUp] Calling Edge Function...');
+      if (DEBUG) console.log('[EDGE][followUp] Calling Edge Function...');
       const result = await callEdgeFunction('generate-answer', {
         question: messages[0].content,
         action_type: 'interview_prep',
         max_tokens: settings.tokenBudgets.interviewPrep,
       });
       if (result?.answer) {
-        console.log('[EDGE][followUp] Success, model:', result.model);
+        if (DEBUG) console.log('[EDGE][followUp] Success, model:', result.model);
         followUpData = parseJSONResponse(result.answer);
       } else {
         console.warn('[EDGE][followUp] Got 200 but answer is falsy:', JSON.stringify({ model: result?.model, cached: result?.cached, keys: Object.keys(result || {}) }));
@@ -2030,14 +2203,14 @@ async function handleGeneratePositioningAdvice(jobId) {
   console.log('[EDGE][positioningAdvice] Decision:', { useBackend, useBackendSetting: _settings.useBackend !== false, signedIn: _signedIn });
   if (useBackend) {
     try {
-      console.log('[EDGE][positioningAdvice] Calling Edge Function...');
+      if (DEBUG) console.log('[EDGE][positioningAdvice] Calling Edge Function...');
       const result = await callEdgeFunction('generate-answer', {
         question: messages[0].content,
         action_type: 'interview_prep',
         max_tokens: Math.max(settings.tokenBudgets.interviewPrep, 4096),
       });
       if (result?.answer) {
-        console.log('[EDGE][positioningAdvice] Success, model:', result.model);
+        if (DEBUG) console.log('[EDGE][positioningAdvice] Success, model:', result.model);
         advice = result.answer;
       } else {
         console.warn('[EDGE][positioningAdvice] Got 200 but answer is falsy:', JSON.stringify({ model: result?.model, cached: result?.cached, keys: Object.keys(result || {}) }));
@@ -2234,7 +2407,15 @@ const handlers = {
 
   'DIGEST_JD': (msg) => handleDigestJD(msg.rawJD, msg.jobTitle, msg.company, msg.url),
 
-  'ANALYZE_JOB': (msg) => handleAnalyzeJob(msg.jobDescription, msg.jobTitle, msg.company, msg.url),
+  'ANALYZE_JOB': async (msg) => {
+    const result = await handleAnalyzeJob(msg.jobDescription, msg.jobTitle, msg.company, msg.url);
+    incrementActivityCounter('jobsAnalyzed').catch(() => {});
+    computeSeriousnessScore().catch(() => {});
+    // Sync JD intelligence + activity (fire-and-forget)
+    syncJDIntelligence(result?.jdDigest).catch(() => {});
+    syncActivityToSupabase().catch(() => {});
+    return result;
+  },
 
   'GENERATE_AUTOFILL': (msg) => handleGenerateAutofill(msg.formFields),
 
@@ -2332,7 +2513,11 @@ const handlers = {
   // ── Job management ─────────────────────────────────────────────────────
   // CRUD operations for saved / applied job lists plus AI-assisted writing.
 
-  'SAVE_JOB': (msg) => handleSaveJob(msg.jobData),
+  'SAVE_JOB': async (msg) => {
+    const result = await handleSaveJob(msg.jobData);
+    syncActivityToSupabase().catch(() => {});
+    return result;
+  },
 
   'DELETE_JOB': (msg) => handleDeleteJob(msg.jobId),
 
@@ -2352,14 +2537,28 @@ const handlers = {
   'EVALUATE_INTERVIEW_ANSWER': (msg) => handleEvaluateAnswer(msg.jobId, msg.questionId, msg.question, msg.userAnswer, msg.category, msg.keyPoints, msg.timeSpentSec),
   'GENERATE_FOLLOWUP_QUESTION': (msg) => handleGenerateFollowUp(msg.jobId, msg.parentQuestionId, msg.question, msg.userAnswer, msg.evaluation, msg.category),
   'GET_INTERVIEW_SESSION': (msg) => getInterviewSession(msg.jobId),
-  'SAVE_INTERVIEW_SESSION': (msg) => saveInterviewSession(msg.session),
+  'SAVE_INTERVIEW_SESSION': async (msg) => {
+    const result = await saveInterviewSession(msg.session);
+    syncActivityToSupabase().catch(() => {});
+    return result;
+  },
   'GENERATE_POSITIONING_ADVICE': (msg) => handleGeneratePositioningAdvice(msg.jobId),
 
-  'GENERATE_COVER_LETTER': (msg) => handleGenerateCoverLetter(msg.jobDescription, msg.analysis, msg.url),
+  'GENERATE_COVER_LETTER': async (msg) => {
+    const result = await handleGenerateCoverLetter(msg.jobDescription, msg.analysis, msg.url);
+    incrementActivityCounter('coverLettersGenerated').catch(() => {});
+    syncActivityToSupabase().catch(() => {});
+    return result;
+  },
 
   'REWRITE_BULLETS': (msg) => handleRewriteBullets(msg.jobDescription, msg.missingSkills, msg.analysis, msg.url),
 
-  'GENERATE_RESUME': (msg) => handleGenerateResume(msg.jobDescription, msg.jobTitle, msg.company, msg.customInstructions, msg.url),
+  'GENERATE_RESUME': async (msg) => {
+    const result = await handleGenerateResume(msg.jobDescription, msg.jobTitle, msg.company, msg.customInstructions, msg.url);
+    incrementActivityCounter('resumesGenerated').catch(() => {});
+    syncActivityToSupabase().catch(() => {});
+    return result;
+  },
 
   'MARK_APPLIED': (msg) => handleMarkApplied(msg.jobData),
 
@@ -2404,6 +2603,30 @@ const handlers = {
   'GET_AUTH_STATE': async (msg) => {
     const user = await getUser();
     return user ? { signedIn: true, user: { id: user.id, email: user.email, name: user.user_metadata?.full_name || user.user_metadata?.name || '' } } : { signedIn: false, user: null };
+  },
+
+  // ── Seriousness score ──────────────────────────────────────────────────
+  'COMPUTE_SERIOUSNESS_SCORE': () => computeSeriousnessScore(),
+
+  // ── Data consent ──────────────────────────────────────────────────────
+  'GET_DATA_CONSENT': async () => {
+    const result = await chrome.storage.local.get('dataConsent');
+    return { consented: result.dataConsent === true, asked: result.dataConsent !== undefined };
+  },
+  'SET_DATA_CONSENT': async (msg) => {
+    const consented = msg.consented === true;
+    await chrome.storage.local.set({ dataConsent: consented });
+    // Sync to Supabase profiles.data_consent if signed in
+    if (await isSignedIn()) {
+      try {
+        const client = await getAuthenticatedClient();
+        const user = await getUser();
+        if (client && user) {
+          await client.from('profiles').update({ data_consent: consented }).eq('id', user.id);
+        }
+      } catch (_) {}
+    }
+    return { success: true, consented };
   },
 };
 

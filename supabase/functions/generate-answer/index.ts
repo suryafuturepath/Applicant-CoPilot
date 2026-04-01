@@ -305,28 +305,27 @@ Deno.serve(async (req: Request) => {
     }
 
     // -- Rate limit check --
-    // TODO: Re-enable before production launch (disabled during dev/testing)
-    // const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    // const { count: recentRequests, error: countError } = await serviceClient
-    //   .from("usage_logs")
-    //   .select("*", { count: "exact", head: true })
-    //   .eq("profile_id", user.id)
-    //   .gte("created_at", oneHourAgo);
-    //
-    // if (countError) {
-    //   console.error("Rate limit check failed:", countError);
-    // } else if (
-    //   recentRequests !== null && recentRequests >= MAX_REQUESTS_PER_HOUR
-    // ) {
-    //   return new Response(
-    //     JSON.stringify({
-    //       error: "Rate limit exceeded",
-    //       detail: `Maximum ${MAX_REQUESTS_PER_HOUR} requests per hour. Try again later.`,
-    //       retry_after_seconds: 3600,
-    //     }),
-    //     { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    //   );
-    // }
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { count: recentRequests, error: countError } = await serviceClient
+      .from("usage_logs")
+      .select("*", { count: "exact", head: true })
+      .eq("profile_id", user.id)
+      .gte("created_at", oneHourAgo);
+
+    if (countError) {
+      console.error("Rate limit check failed:", countError);
+    } else if (
+      recentRequests !== null && recentRequests >= MAX_REQUESTS_PER_HOUR
+    ) {
+      return new Response(
+        JSON.stringify({
+          error: "Rate limit exceeded",
+          detail: `Maximum ${MAX_REQUESTS_PER_HOUR} requests per hour. Try again later.`,
+          retry_after_seconds: 3600,
+        }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     // -- Parse request body --
     let body: RequestBody;

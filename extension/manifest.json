@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Applicant Copilot – AI-Powered Job Application Assistant",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "Your AI copilot for job applications. Generates tailored answers using your experience profile and job context.",
   "permissions": [
     "storage",
