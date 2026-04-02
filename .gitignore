@@ -11,6 +11,8 @@ linearkey.txt
 # Build artifacts
 *.zip
 dist/
+extension/content.js
+extension/content.js.map
 
 # OS
 .DS_Store

@@ -35,7 +35,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["keywordMatcher.js", "content.js"],
+      "js": ["content.js"],
       "css": ["styles.css"],
       "run_at": "document_idle"
     }
