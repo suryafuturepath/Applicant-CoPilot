@@ -649,13 +649,7 @@
 
       /* Backdrop (transparent overlay to capture outside clicks) */
       .jm-backdrop {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100vw;
-        height: 100vh;
-        background: transparent;
-        z-index: 2147483645;
+        display: none; /* Replaced by document-level click-outside listener to avoid blocking page scroll */
       }
 
       /* Toggle button (outside panel) */
@@ -3199,6 +3193,7 @@
   let _backdropEl = null;
   // Reference to the escape key handler so we can add/remove it
   let _escHandler = null;
+  let _outsideClickHandler = null;
 
   function togglePanel() {
     panelOpen = !panelOpen;
@@ -3213,18 +3208,17 @@
     }
 
     if (panelOpen) {
-      // Create backdrop inside the shadow DOM
-      if (!_backdropEl) {
-        _backdropEl = document.createElement('div');
-        _backdropEl.className = 'jm-backdrop';
-        _backdropEl.addEventListener('click', () => togglePanel());
-        shadowRoot.insertBefore(_backdropEl, shadowRoot.firstChild.nextSibling);
-      } else {
-        _backdropEl.style.display = 'block';
-      }
-
       panelRoot.classList.add('open');
       panel.classList.add('open');
+
+      // Close panel when clicking outside (replaces full-page backdrop that blocked scrolling)
+      _outsideClickHandler = (e) => {
+        if (panelOpen && !panelRoot.contains(e.target) && (!toggleBtnRef || !toggleBtnRef.getRootNode().host?.contains(e.target))) {
+          togglePanel();
+        }
+      };
+      // Delay to avoid catching the current click that opened the panel
+      setTimeout(() => document.addEventListener('click', _outsideClickHandler, true), 0);
 
       // Add Escape key handler
       _escHandler = (e) => {
@@ -3243,8 +3237,11 @@
       panel.classList.remove('open');
       panelRoot.classList.remove('open');
 
-      // Hide backdrop
-      if (_backdropEl) _backdropEl.style.display = 'none';
+      // Remove click-outside handler
+      if (_outsideClickHandler) {
+        document.removeEventListener('click', _outsideClickHandler, true);
+        _outsideClickHandler = null;
+      }
 
       // Remove Escape key handler
       if (_escHandler) {
