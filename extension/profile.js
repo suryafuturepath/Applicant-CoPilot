@@ -1558,6 +1558,9 @@ async function saveSettings() {
   // Save data consent separately (its own storage key + Supabase sync)
   const dataConsent = document.getElementById('sDataConsent').checked;
   await sendMessage({ type: 'SET_DATA_CONSENT', consented: dataConsent });
+  // Save auto-scan preference
+  const autoScanEnabled = document.getElementById('sAutoScanEnabled').checked;
+  await chrome.storage.local.set({ acAutoScanEnabled: autoScanEnabled });
 }
 
 // ─── Pre-fill intake from profile data ───────────────────────────────────────
@@ -1783,6 +1786,12 @@ async function init() {
         }
       }
     }
+
+    // Auto-scan toggle
+    try {
+      const asData = await chrome.storage.local.get('acAutoScanEnabled');
+      document.getElementById('sAutoScanEnabled').checked = asData.acAutoScanEnabled !== false;
+    } catch (_) {}
 
     // Render system prompt editors
     if (promptData) {
