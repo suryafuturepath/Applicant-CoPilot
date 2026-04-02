@@ -3213,12 +3213,15 @@
 
       // Close panel when clicking outside (replaces full-page backdrop that blocked scrolling)
       _outsideClickHandler = (e) => {
+        // Only react to real user clicks — ignore programmatic .click() calls
+        // (e.g. expandTruncatedContent clicking LinkedIn's "Show more" button)
+        if (!e.isTrusted) return;
         if (panelOpen && !panelRoot.contains(e.target) && (!toggleBtnRef || !toggleBtnRef.getRootNode().host?.contains(e.target))) {
           togglePanel();
         }
       };
       // Delay to avoid catching the current click that opened the panel
-      setTimeout(() => document.addEventListener('click', _outsideClickHandler, true), 0);
+      setTimeout(() => document.addEventListener('click', _outsideClickHandler), 0);
 
       // Add Escape key handler
       _escHandler = (e) => {
@@ -3239,7 +3242,7 @@
 
       // Remove click-outside handler
       if (_outsideClickHandler) {
-        document.removeEventListener('click', _outsideClickHandler, true);
+        document.removeEventListener('click', _outsideClickHandler);
         _outsideClickHandler = null;
       }
 
