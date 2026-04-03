@@ -46,7 +46,8 @@
         "libs/pdf.min.js",
         "libs/pdf.worker.min.js",
         "libs/mammoth.browser.min.js",
-        "libs/supabase-bundle.js"
+        "libs/supabase-bundle.js",
+        "fonts/Manrope-Variable.woff2"
       ],
       "matches": ["<all_urls>"]
     }

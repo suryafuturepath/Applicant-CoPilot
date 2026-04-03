@@ -16,6 +16,34 @@ import { updateChatEmptyState } from '../features/chat.js';
 import { escapeHTML } from '../utils.js';
 
 /**
+ * Updates the SVG score ring and number display.
+ * @param {ShadowRoot} shadowRoot
+ * @param {number} score - 0-100
+ */
+function updateScoreRing(shadowRoot, score) {
+  // Update number
+  const scoreNumber = shadowRoot.getElementById('jmScoreCircle');
+  if (scoreNumber) scoreNumber.textContent = score;
+
+  // Update SVG ring arc
+  const ringFill = shadowRoot.getElementById('jmScoreRingFill');
+  if (ringFill) {
+    const circumference = 2 * Math.PI * 52; // r=52 from the SVG
+    const dashLen = (score / 100) * circumference;
+    ringFill.style.strokeDasharray = `${dashLen} ${circumference}`;
+
+    // Color based on score
+    if (score >= 70) {
+      ringFill.style.stroke = '#4f614d'; // sage green
+    } else if (score >= 45) {
+      ringFill.style.stroke = '#d97706'; // amber
+    } else {
+      ringFill.style.stroke = '#dc2626'; // red
+    }
+  }
+}
+
+/**
  * Runs a job analysis for the current page: extracts the JD, sends it to the
  * AI via background.js, caches the result, and renders it in the panel.
  *
@@ -163,12 +191,16 @@ export function renderAnalysis(data) {
       setStatus('AI response format was unexpected. Try Re-Analyze for better results.', 'error');
     }
 
-    // Score
+    // Score — update SVG ring
     const scoreSection = shadowRoot.getElementById('jmScoreSection');
-    const scoreCircle = shadowRoot.getElementById('jmScoreCircle');
     const score = data.matchScore || 0;
-    scoreCircle.textContent = score;
-    scoreCircle.className = 'jm-score-circle ' + getScoreClass(score);
+    updateScoreRing(shadowRoot, score);
+
+    // Update score label
+    const scoreLabel = shadowRoot.getElementById('jmScoreLabel');
+    if (scoreLabel) {
+      scoreLabel.textContent = score >= 70 ? 'Strong Candidate' : score >= 45 ? 'Good Match' : 'Needs Work';
+    }
     scoreSection.style.display = 'block';
 
     // Matching skills
@@ -244,12 +276,16 @@ export function renderQuickMatch(result, title, company, location, salary) {
     // Show job metadata
     showJobMeta(title, company, location, salary);
 
-    // Score — show with "Quick Match" label
+    // Score — show with SVG ring + "Quick Match" label
     const scoreSection = shadowRoot.getElementById('jmScoreSection');
-    const scoreCircle = shadowRoot.getElementById('jmScoreCircle');
     const score = result.score || 0;
-    scoreCircle.textContent = score;
-    scoreCircle.className = 'jm-score-circle ' + getScoreClass(score);
+    updateScoreRing(shadowRoot, score);
+
+    // Update score label
+    const scoreLabel = shadowRoot.getElementById('jmScoreLabel');
+    if (scoreLabel) {
+      scoreLabel.textContent = score >= 70 ? 'Strong Candidate' : score >= 45 ? 'Good Match' : 'Needs Work';
+    }
     scoreSection.style.display = 'block';
 
     // Add/update "Quick Match" label below score
@@ -257,11 +293,17 @@ export function renderQuickMatch(result, title, company, location, salary) {
     if (!quickLabel) {
       quickLabel = document.createElement('div');
       quickLabel.id = 'jmQuickMatchLabel';
-      quickLabel.style.cssText = 'text-align:center;font-size:11px;color:#6b7280;margin-top:4px;font-weight:500;';
+      quickLabel.style.cssText = 'text-align:center;font-size:11px;color:var(--ac-text-muted);margin-top:4px;font-weight:500;';
       scoreSection.appendChild(quickLabel);
     }
     quickLabel.textContent = 'Quick Match (keyword scan)';
     quickLabel.style.display = 'block';
+
+    // Update match count badge
+    const matchCount = shadowRoot.getElementById('jmMatchCount');
+    if (matchCount && result.matchedKeywords) {
+      matchCount.textContent = result.matchedKeywords.length + ' Found';
+    }
 
     // Matching keywords as skill tags
     const matchingSection = shadowRoot.getElementById('jmMatchingSection');

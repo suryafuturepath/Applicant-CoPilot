@@ -8,62 +8,66 @@
  * @returns {string} CSS text to inject into a <style> element.
  */
 export function getPanelCSS() {
+    // Font URL must be resolved at runtime inside Shadow DOM
+    const fontUrl = typeof chrome !== 'undefined' && chrome.runtime
+      ? chrome.runtime.getURL('fonts/Manrope-Variable.woff2')
+      : 'fonts/Manrope-Variable.woff2';
+
     return `
+      @font-face {
+        font-family: 'Manrope';
+        src: url('${fontUrl}') format('woff2');
+        font-weight: 200 800;
+        font-style: normal;
+        font-display: swap;
+      }
+
       * { margin: 0; padding: 0; box-sizing: border-box; }
 
-      /* ── Theme CSS Variables ── */
+      /* ── The Organic Archive — Sage Design System ── */
       #jm-panel {
-        --ac-primary: #3b82f6;
-        --ac-primary-hover: #2563eb;
-        --ac-bg: #ffffff;
-        --ac-card-bg: #f8fafc;
-        --ac-border: #e2e8f0;
-        --ac-text: #1e293b;
-        --ac-text-secondary: #64748b;
-        --ac-text-muted: #94a3b8;
-        --ac-tag-bg: #dbeafe;
-        --ac-tag-text: #1e40af;
-        --ac-hover-bg: #eff6ff;
-        --ac-input-bg: #f8fafc;
-        --ac-shadow: rgba(59,130,246,0.15);
-        --ac-nav-inactive-bg: #f1f5f9;
-        --ac-nav-inactive-text: #64748b;
-      }
+        /* Primary — Sage */
+        --ac-primary: #4f614d;
+        --ac-primary-hover: #3d4d3b;
+        --ac-primary-gradient: linear-gradient(135deg, #4f614d, #677965);
 
-      #jm-panel.theme-dark {
-        --ac-primary: #3b82f6;
-        --ac-primary-hover: #2563eb;
-        --ac-bg: #1e293b;
-        --ac-card-bg: #0f172a;
-        --ac-border: #334155;
-        --ac-text: #f1f5f9;
-        --ac-text-secondary: #cbd5e1;
-        --ac-text-muted: #94a3b8;
-        --ac-tag-bg: #1e3a5f;
-        --ac-tag-text: #93c5fd;
-        --ac-hover-bg: #334155;
-        --ac-input-bg: #0f172a;
-        --ac-shadow: rgba(0,0,0,0.3);
-        --ac-nav-inactive-bg: #334155;
-        --ac-nav-inactive-text: #94a3b8;
-      }
+        /* Surfaces — Tonal Layering (no borders) */
+        --ac-bg: #f9f9f8;
+        --ac-card-bg: #ffffff;
+        --ac-surface-low: #f3f4f3;
+        --ac-surface-mid: #edeeed;
+        --ac-surface-high: #e4e5e3;
 
-      #jm-panel.theme-warm {
-        --ac-primary: #d97706;
-        --ac-primary-hover: #b45309;
-        --ac-bg: #fffbf5;
-        --ac-card-bg: #fefce8;
-        --ac-border: #fde68a;
-        --ac-text: #451a03;
-        --ac-text-secondary: #92400e;
-        --ac-text-muted: #a16207;
-        --ac-tag-bg: #fef3c7;
-        --ac-tag-text: #92400e;
-        --ac-hover-bg: #fef9c3;
-        --ac-input-bg: #fefce8;
-        --ac-shadow: rgba(217,119,6,0.15);
-        --ac-nav-inactive-bg: #fef3c7;
-        --ac-nav-inactive-text: #92400e;
+        /* Text — Never pure black */
+        --ac-text: #191c1c;
+        --ac-text-secondary: #434842;
+        --ac-text-muted: #727971;
+
+        /* Tags */
+        --ac-tag-bg: #e8ede7;
+        --ac-tag-text: #3d4d3b;
+        --ac-tag-match-bg: #d1e8cf;
+        --ac-tag-match-text: #2d4a2a;
+        --ac-tag-missing-bg: #f5d5d5;
+        --ac-tag-missing-text: #8b2525;
+
+        /* Secondary — Navy (Trust/Action) */
+        --ac-secondary: #465f88;
+        --ac-secondary-fixed: #d6e3ff;
+        --ac-secondary-fixed-text: #001b3d;
+
+        /* Interaction */
+        --ac-hover-bg: #eef0ee;
+        --ac-input-bg: #ffffff;
+        --ac-border: transparent;
+        --ac-ghost-border: rgba(196, 200, 192, 0.15);
+
+        /* Depth — Ambient Luminance */
+        --ac-shadow: rgba(25, 28, 28, 0.06);
+
+        /* Nav */
+        --ac-nav-inactive-bg: transparent;
+        --ac-nav-inactive-text: #727971;
       }
 
       #jm-panel {
@@ -76,7 +80,7 @@ export function getPanelCSS() {
         box-shadow: none;
         display: flex;
         flex-direction: column;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         font-size: 14px;
         color: var(--ac-text);
         overflow: hidden;
@@ -88,47 +92,99 @@ export function getPanelCSS() {
 
       #jm-panel.open {
         transform: translateX(0);
-        box-shadow: -4px 0 24px rgba(0,0,0,0.15);
+        box-shadow: -8px 0 32px var(--ac-shadow);
       }
 
+      /* ── Handle bar (top chrome accent) ── */
+      .jm-handle {
+        height: 6px;
+        background: var(--ac-surface-high);
+        flex-shrink: 0;
+      }
+
+      /* ── Header: Brand + Gear icon ── */
       .jm-header {
-        background: var(--ac-primary);
-        color: white;
-        padding: 16px 20px;
+        background: var(--ac-bg);
+        color: var(--ac-text);
+        padding: 14px 20px;
         display: flex;
         justify-content: space-between;
         align-items: center;
         flex-shrink: 0;
+        border-bottom: 1px solid var(--ac-surface-mid);
       }
-      #jm-panel.theme-dark .jm-header { background: #1e3a5f !important; }
-      #jm-panel.theme-warm .jm-header { background: #d97706 !important; }
-
-      .jm-header h2 { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 6px; margin: 0; }
-      .jm-header h2 span { font-size: 40px; line-height: 1; flex-shrink: 0; }
-      .jm-header .jm-title-text { display: flex; flex-direction: column; }
-      .jm-header .jm-title-text .jm-subtitle { font-size: 11px; font-weight: 400; opacity: 0.8; margin-top: 2px; }
-
-      /* Theme toggle button */
-      .jm-theme-btn {
-        width: 28px;
-        height: 28px;
-        border-radius: 50%;
-        border: 2px solid rgba(255,255,255,0.4);
+      .jm-header-brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .jm-header-icon {
+        font-size: 20px;
+        color: var(--ac-primary);
+      }
+      .jm-header-title {
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: var(--ac-primary);
+      }
+      .jm-header-gear {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        border: none;
         cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: center;
-        background: rgba(255,255,255,0.15);
-        color: #fff;
-        font-size: 14px;
-        transition: background 0.15s;
-        flex-shrink: 0;
+        background: transparent;
+        color: var(--ac-text-muted);
+        transition: background 0.15s, color 0.15s;
         padding: 0;
       }
-      .jm-theme-btn:hover {
-        background: rgba(255,255,255,0.3);
+      .jm-header-gear:hover {
+        background: var(--ac-surface-low);
+        color: var(--ac-text);
       }
-      /* subtitle is now styled via .jm-title-text .jm-subtitle */
+
+      /* ── Bottom Navigation Bar ── */
+      .jm-bottom-nav {
+        display: flex;
+        justify-content: space-around;
+        align-items: center;
+        padding: 8px 16px 12px;
+        background: var(--ac-bg);
+        border-top: 1px solid var(--ac-surface-mid);
+        flex-shrink: 0;
+      }
+      .jm-bottom-nav-btn {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        padding: 6px 16px;
+        border: none;
+        background: transparent;
+        color: var(--ac-text-muted);
+        font-family: inherit;
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.02em;
+        cursor: pointer;
+        border-radius: 12px;
+        transition: color 0.15s, background 0.15s;
+      }
+      .jm-bottom-nav-btn svg { stroke: currentColor; }
+      .jm-bottom-nav-btn:hover {
+        color: var(--ac-text-secondary);
+        background: var(--ac-surface-low);
+      }
+      .jm-bottom-nav-btn.active {
+        color: var(--ac-primary);
+        background: var(--ac-surface-low);
+        font-weight: 600;
+      }
+      .jm-bottom-nav-btn.active span { text-transform: uppercase; letter-spacing: 0.04em; }
 
       .jm-close {
         background: rgba(255,255,255,0.2);
@@ -146,37 +202,7 @@ export function getPanelCSS() {
       }
       .jm-close:hover { background: rgba(255,255,255,0.35); }
 
-      .jm-nav {
-        display: flex;
-        background: var(--ac-bg);
-        border-bottom: 1px solid var(--ac-border);
-        flex-shrink: 0;
-      }
-
-      .jm-nav-btn {
-        flex: 1;
-        padding: 9px 0;
-        border: none;
-        background: none;
-        font-size: 12px;
-        font-weight: 500;
-        color: var(--ac-nav-inactive-text);
-        cursor: pointer;
-        transition: color 0.2s, background 0.2s;
-        font-family: inherit;
-        text-align: center;
-      }
-
-      .jm-nav-btn:hover {
-        color: var(--ac-primary);
-        background: var(--ac-hover-bg);
-      }
-
-      .jm-nav-btn.active {
-        color: var(--ac-primary);
-        border-bottom: 2px solid var(--ac-primary);
-        font-weight: 600;
-      }
+      /* Old top nav — replaced by bottom nav */
 
       .jm-body {
         flex: 1;
@@ -207,32 +233,39 @@ export function getPanelCSS() {
       }
 
       .jm-btn-primary {
-        background: var(--ac-primary);
+        background: var(--ac-primary-gradient);
         color: white;
       }
       .jm-btn-primary:hover { background: var(--ac-primary-hover); }
 
       .jm-btn-secondary {
-        background: var(--ac-border);
-        color: var(--ac-text-secondary);
+        background: var(--ac-secondary-fixed);
+        color: var(--ac-secondary-fixed-text);
       }
-      .jm-btn-secondary:hover { background: var(--ac-hover-bg); }
+      .jm-btn-secondary:hover { opacity: 0.85; }
+
+      .jm-btn-tertiary {
+        background: transparent;
+        color: var(--ac-primary);
+        padding: 12px 8px;
+      }
+      .jm-btn-tertiary:hover { background: var(--ac-surface-low); }
 
       .jm-btn-success {
-        background: #d1fae5;
-        color: #059669;
+        background: var(--ac-tag-match-bg);
+        color: var(--ac-tag-match-text);
       }
-      .jm-btn-success:hover { background: #a7f3d0; }
+      .jm-btn-success:hover { opacity: 0.85; }
 
       .jm-btn-applied {
-        background: var(--ac-primary);
+        background: var(--ac-primary-gradient);
         color: white;
       }
       .jm-btn-applied:hover { background: var(--ac-primary-hover); }
 
       .jm-btn-applied-done {
-        background: #93c5fd;
-        color: #581c87;
+        background: var(--ac-surface-mid);
+        color: var(--ac-text-muted);
         cursor: default;
       }
 
@@ -265,35 +298,82 @@ export function getPanelCSS() {
       }
       @keyframes jm-spin { to { transform: rotate(360deg); } }
 
-      /* Score display */
+      /* ── Score Display — SVG Ring ── */
       .jm-score-section {
         text-align: center;
-        margin-bottom: 20px;
+        margin-bottom: 24px;
+        padding: 20px 0;
         display: none;
       }
-
-      .jm-score-circle {
-        width: 100px;
-        height: 100px;
-        border-radius: 50%;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 32px;
-        font-weight: 700;
-        color: white;
-        margin-bottom: 8px;
+      .jm-score-label-top {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ac-text-muted);
+        margin-bottom: 12px;
+      }
+      .jm-score-ring-container {
+        position: relative;
+        width: 140px;
+        height: 140px;
+        margin: 0 auto 12px;
+      }
+      .jm-score-ring {
+        width: 100%;
+        height: 100%;
+        transform: rotate(-90deg);
+      }
+      .jm-score-ring-track {
+        fill: none;
+        stroke: var(--ac-surface-mid);
+        stroke-width: 8;
+      }
+      .jm-score-ring-fill {
+        fill: none;
+        stroke: var(--ac-primary);
+        stroke-width: 8;
+        stroke-linecap: round;
+        transition: stroke-dasharray 0.8s ease;
+      }
+      .jm-score-value {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        display: flex;
+        align-items: baseline;
+        gap: 2px;
+      }
+      .jm-score-number {
+        font-size: 36px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        color: var(--ac-text);
+      }
+      .jm-score-percent {
+        font-size: 18px;
+        font-weight: 600;
+        color: var(--ac-text-muted);
+      }
+      .jm-score-label {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--ac-text-secondary);
       }
 
-      .jm-score-label { font-size: 13px; color: var(--ac-text-secondary); }
+      /* Legacy score circle classes — kept for renderAnalysis compatibility */
+      .jm-score-circle { display: none; }
+      .score-green { color: #2d4a2a; }
+      .score-amber { color: #92400e; }
+      .score-red { color: #8b2525; }
 
-      .score-green { background: linear-gradient(135deg, #10b981, #059669); }
-      .score-amber { background: linear-gradient(135deg, #f59e0b, #d97706); }
-      .score-red { background: linear-gradient(135deg, #ef4444, #dc2626); }
-
-      /* Skills tags */
+      /* ── Sections & Tags — Organic Archive ── */
       .jm-section {
-        margin-bottom: 16px;
+        margin-bottom: 20px;
+        padding: 16px;
+        background: var(--ac-card-bg);
+        border-radius: 12px;
         display: none;
       }
 
@@ -301,9 +381,39 @@ export function getPanelCSS() {
         font-size: 13px;
         font-weight: 600;
         color: var(--ac-text-secondary);
-        margin-bottom: 8px;
+        margin-bottom: 10px;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.05em;
+      }
+      .jm-section-title-caps {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--ac-text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 10px;
+      }
+
+      .jm-section-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .jm-section-header h3 { margin-bottom: 0; }
+      .jm-section-icon {
+        font-size: 16px;
+        color: var(--ac-primary);
+      }
+      .jm-section-icon.jm-icon-gap { color: var(--ac-tag-missing-text); }
+      .jm-section-count {
+        margin-left: auto;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 2px 10px;
+        border-radius: 10px;
+        background: var(--ac-tag-match-bg);
+        color: var(--ac-tag-match-text);
       }
 
       .jm-tags {
@@ -313,15 +423,76 @@ export function getPanelCSS() {
       }
 
       .jm-tag {
-        padding: 4px 10px;
-        border-radius: 20px;
+        padding: 5px 12px;
+        border-radius: 8px;
         font-size: 12px;
         font-weight: 500;
       }
 
-      .jm-tag-match { background: #d1fae5; color: #059669; }
-      .jm-tag-missing { background: #fee2e2; color: #dc2626; }
+      .jm-tag-match { background: var(--ac-tag-match-bg); color: var(--ac-tag-match-text); }
+      .jm-tag-missing { background: var(--ac-tag-missing-bg); color: var(--ac-tag-missing-text); }
       .jm-tag-keyword { background: var(--ac-tag-bg); color: var(--ac-tag-text); }
+
+      /* ── AI Coach / Coaching Tab ── */
+      .jm-coach-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 0;
+        margin-bottom: 8px;
+      }
+      .jm-coach-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        background: var(--ac-primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        flex-shrink: 0;
+      }
+      .jm-coach-dot {
+        position: absolute;
+        bottom: -2px;
+        right: -2px;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #22c55e;
+        border: 2px solid var(--ac-bg);
+      }
+      .jm-coach-info { flex: 1; }
+      .jm-coach-name { font-size: 15px; font-weight: 700; color: var(--ac-text); }
+      .jm-coach-role { font-size: 12px; color: var(--ac-text-muted); }
+
+      /* ── Saved Jobs Header ── */
+      .jm-saved-header { margin-bottom: 16px; }
+      .jm-saved-title-main { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; color: var(--ac-text); margin-bottom: 4px; }
+      .jm-saved-subtitle { font-size: 13px; color: var(--ac-text-muted); }
+
+      /* ── Chat suggested topics ── */
+      .jm-chat-suggested {
+        padding: 8px 0;
+      }
+      .jm-chat-suggested-label {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--ac-text-muted);
+        margin-bottom: 6px;
+      }
+
+      /* ── Badge styles ── */
+      .jm-badge-green {
+        font-size: 11px;
+        background: var(--ac-primary);
+        color: #fff;
+        padding: 2px 8px;
+        border-radius: 8px;
+        font-weight: 600;
+      }
 
       /* Recommendations */
       .jm-recs {
@@ -414,11 +585,11 @@ export function getPanelCSS() {
         width: 42px;
         height: 42px;
         border-radius: 50%;
-        background: var(--ac-fab-bg, #3b82f6);
+        background: var(--ac-fab-bg, #4f614d);
         color: white;
         border: none;
         cursor: grab;
-        box-shadow: 0 4px 12px var(--ac-fab-shadow, rgba(59,130,246,0.4));
+        box-shadow: 0 4px 12px var(--ac-fab-shadow, rgba(79,97,77,0.4));
         font-size: 30px;
         display: flex;
         align-items: center;
@@ -430,22 +601,22 @@ export function getPanelCSS() {
       }
       .jm-toggle:hover {
         transform: scale(1.1);
-        box-shadow: 0 6px 16px var(--ac-fab-shadow, rgba(59,130,246,0.5));
+        box-shadow: 0 6px 16px var(--ac-fab-shadow, rgba(79,97,77,0.5));
       }
       .jm-toggle.dragging {
         cursor: grabbing;
         transform: scale(1.1);
-        box-shadow: 0 8px 20px var(--ac-fab-shadow, rgba(59,130,246,0.6));
+        box-shadow: 0 8px 20px var(--ac-fab-shadow, rgba(79,97,77,0.6));
         transition: none;
       }
 
       /* Outline button */
       .jm-btn-outline {
-        background: var(--ac-bg);
-        border: 1.5px solid var(--ac-primary);
+        background: var(--ac-card-bg);
+        border: 1.5px solid var(--ac-surface-high);
         color: var(--ac-primary);
       }
-      .jm-btn-outline:hover { background: var(--ac-hover-bg); }
+      .jm-btn-outline:hover { background: var(--ac-surface-low); }
 
       /* Truncation notice */
       .jm-trunc-notice {
@@ -637,11 +808,11 @@ export function getPanelCSS() {
       /* Saved jobs tab */
       .jm-saved-list { display: flex; flex-direction: column; gap: 8px; }
       .jm-saved-card {
-        background: var(--ac-card-bg); border-radius: 8px; padding: 12px;
-        position: relative; border: 1px solid var(--ac-border);
-        transition: border-color 0.15s;
+        background: var(--ac-card-bg); border-radius: 12px; padding: 16px;
+        position: relative;
+        transition: background 0.15s;
       }
-      .jm-saved-card:hover { border-color: var(--ac-primary); }
+      .jm-saved-card:hover { background: var(--ac-surface-low); }
       .jm-saved-title { font-weight: 600; font-size: 13px; color: var(--ac-text); text-decoration: none; display: block; margin-bottom: 4px; }
       .jm-saved-title:hover { color: var(--ac-primary); }
       .jm-saved-company { font-size: 12px; color: var(--ac-text-secondary); }
@@ -886,9 +1057,9 @@ export function getPanelCSS() {
       }
       .jm-chat-chip {
         padding: 10px 12px;
-        border: 1px solid var(--ac-border);
+        border: 1px solid var(--ac-surface-high);
         border-radius: 10px;
-        background: var(--ac-bg);
+        background: var(--ac-card-bg);
         color: var(--ac-text);
         font-size: 12px;
         font-weight: 500;

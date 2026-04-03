@@ -12,7 +12,7 @@ import { scrollPanelTo } from './status.js';
 import { loadJobNotes, saveJobNotes } from '../storage/job-notes.js';
 import { activateSavedTab, deactivateSavedTab } from '../features/saved-jobs.js';
 import { activateAskAiTab, deactivateAskAiTab, sendChatMessage, clearChat } from '../features/chat.js';
-import { cycleTheme } from './theme.js';
+// theme.js no longer has a cycle — single sage theme
 
 // ─── Late-binding registry ────────────────────────────────────────
 // Interview prep functions live in a module that hasn't been extracted yet.
@@ -131,31 +131,35 @@ export function wireEvents(panel) {
       _notesDebounce = setTimeout(saveJobNotes, 800);
     });
 
-    // Theme toggle button
-    panel.querySelector('#jmThemeToggle').addEventListener('click', cycleTheme);
+    // Gear icon — opens Profile & Settings page
+    const gearBtn = panel.querySelector('#jmGearBtn');
+    if (gearBtn) {
+      gearBtn.addEventListener('click', () => {
+        sendMessage({ type: 'OPEN_PROFILE_TAB', hash: 'settings' });
+      });
+    }
 
-    // Nav buttons — Home and in-panel tabs stay in panel; Profile/Settings open profile page
-    panel.querySelectorAll('.jm-nav-btn').forEach(btn => {
+    // Bottom navigation — 3 tabs: Analysis (home), Coaching (ask-ai), Saved
+    shadowRoot.querySelectorAll('.jm-bottom-nav-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const tab = btn.dataset.nav;
         // Always deactivate interview prep when switching tabs
         call('deactivateInterviewPrep');
+
+        // Update active state on bottom nav
+        shadowRoot.querySelectorAll('.jm-bottom-nav-btn').forEach(b => {
+          b.classList.toggle('active', b === btn);
+        });
+
         if (tab === 'home') {
           deactivateSavedTab();
           deactivateAskAiTab();
-          // Highlight Home nav button
-          shadowRoot.querySelectorAll('.jm-nav-btn').forEach(b => {
-            b.classList.toggle('active', b.dataset.nav === 'home');
-          });
+        } else if (tab === 'coaching') {
+          deactivateSavedTab();
+          activateAskAiTab();
         } else if (tab === 'saved') {
           deactivateAskAiTab();
           activateSavedTab();
-        } else if (tab === 'ask-ai') {
-          deactivateSavedTab();
-          activateAskAiTab();
-        } else {
-          // Profile and Settings open in a new tab
-          chrome.runtime.sendMessage({ type: 'OPEN_PROFILE_TAB', hash: tab });
         }
       });
     });

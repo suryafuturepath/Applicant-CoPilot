@@ -1441,6 +1441,7 @@ async function handleGenerateResume(jobDescription, jobTitle, company, customIns
   const profile = await getProfile();
   if (!profile) throw new Error('No resume profile found. Upload your resume first.');
   const settings = await getSettings();
+  const prompts = await getCustomPrompts();
   const resumeBudget = settings.tokenBudgets.resume;
 
   // Resume gen needs FULL profile (no slicing) but uses digest for JD
