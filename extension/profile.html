@@ -1517,6 +1517,203 @@
     .applied-table a:hover { text-decoration: underline; }
 
     /* ══════════════════════════════════════════════
+       INTERVIEW PREP (full-page view)
+    ══════════════════════════════════════════════ */
+    .prep-back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      color: var(--ac-text-secondary);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      padding: 8px 0;
+      font-family: inherit;
+      margin-bottom: 12px;
+    }
+    .prep-back-btn:hover { color: var(--ac-text); }
+
+    .prep-job-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .prep-job-score {
+      width: 56px; height: 56px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; font-weight: 700; color: #fff; flex-shrink: 0;
+    }
+    .prep-job-title { font-size: 20px; font-weight: 600; color: var(--ac-text); }
+    .prep-job-company { font-size: 14px; color: var(--ac-text-secondary); margin-top: 2px; }
+
+    .prep-section { max-width: 800px; }
+
+    .prep-categories {
+      display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;
+    }
+    .prep-cat-check {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 14px; color: var(--ac-text-secondary); cursor: pointer;
+    }
+    .prep-cat-check input { accent-color: var(--ac-primary); width: 16px; height: 16px; }
+
+    .prep-timer-toggle {
+      margin-bottom: 20px; font-size: 13px; color: var(--ac-text-secondary);
+    }
+    .prep-timer-toggle label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .prep-timer-toggle input { accent-color: var(--ac-primary); }
+
+    .prep-no-jd {
+      background: #fef3c7; color: #92400e; padding: 10px 14px;
+      border-radius: var(--ac-radius-lg); font-size: 13px; margin-bottom: 16px;
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    /* Question list */
+    .prep-progress {
+      font-size: 13px; color: var(--ac-text-muted); margin-bottom: 12px;
+    }
+    .prep-qcard {
+      background: var(--ac-bg); border: 1px solid var(--ac-border);
+      border-radius: var(--ac-radius-xl); padding: 16px 20px;
+      margin-bottom: 10px; display: flex; align-items: center; gap: 12px;
+      transition: box-shadow 0.15s;
+    }
+    .prep-qcard:hover { box-shadow: var(--ac-botanical-shadow); }
+    .prep-qcard-body { flex: 1; min-width: 0; }
+    .prep-qcard-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .prep-qcard-pill {
+      padding: 2px 10px; border-radius: 10px; font-size: 11px;
+      font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;
+    }
+    .prep-qcard-pill.behavioral   { background: #dbeafe; color: #1d4ed8; }
+    .prep-qcard-pill.technical    { background: #fce7f3; color: #be185d; }
+    .prep-qcard-pill.situational  { background: #fef3c7; color: #92400e; }
+    .prep-qcard-pill.role-specific { background: #d1fae5; color: #059669; }
+    .prep-qcard-diff {
+      font-size: 10px; color: var(--ac-text-muted); text-transform: uppercase;
+    }
+    .prep-qcard-text { font-size: 14px; color: var(--ac-text); line-height: 1.5; }
+    .prep-qcard-score {
+      width: 36px; height: 36px; border-radius: 50%; display: flex;
+      align-items: center; justify-content: center; font-size: 14px;
+      font-weight: 700; color: #fff; flex-shrink: 0;
+    }
+    .prep-qcard-actions { flex-shrink: 0; }
+
+    /* Answer view */
+    .prep-answer-section { max-width: 800px; }
+    .prep-question-display {
+      font-size: 18px; font-weight: 500; color: var(--ac-text);
+      line-height: 1.6; margin-bottom: 16px; padding: 16px 20px;
+      background: var(--ac-surface-low); border-radius: var(--ac-radius-xl);
+    }
+    .prep-timer {
+      text-align: center; font-size: 32px; font-weight: 700;
+      color: var(--ac-primary); margin-bottom: 12px; font-variant-numeric: tabular-nums;
+    }
+    .prep-timer.warning { color: #f59e0b; }
+    .prep-timer.danger { color: #ef4444; }
+    .prep-timer-controls { text-align: center; margin-bottom: 16px; }
+    .prep-hints {
+      margin-bottom: 16px; font-size: 13px; color: var(--ac-text-secondary);
+    }
+    .prep-hints summary {
+      cursor: pointer; font-weight: 500; color: var(--ac-text-secondary);
+      padding: 8px 0;
+    }
+    .prep-hints ul { padding-left: 20px; margin-top: 6px; line-height: 1.6; }
+    .prep-textarea {
+      width: 100%; min-height: 180px; padding: 14px 16px;
+      border: 1px solid var(--ac-border); border-radius: var(--ac-radius-lg);
+      font-family: inherit; font-size: 14px; line-height: 1.6;
+      resize: vertical; color: var(--ac-text); background: var(--ac-bg);
+    }
+    .prep-textarea:focus { outline: none; border-color: var(--ac-primary); }
+    .prep-wordcount {
+      font-size: 12px; color: var(--ac-text-muted); text-align: right; margin-top: 4px; margin-bottom: 12px;
+    }
+    .prep-action-row {
+      display: flex; gap: 10px; margin-top: 16px;
+    }
+
+    /* Feedback view */
+    .prep-feedback { max-width: 800px; }
+    .prep-feedback-top {
+      display: flex; align-items: flex-start; gap: 24px; margin-bottom: 20px;
+    }
+    .prep-score-circle {
+      width: 80px; height: 80px; border-radius: 50%; display: flex;
+      align-items: center; justify-content: center; font-size: 28px;
+      font-weight: 700; color: #fff; flex-shrink: 0;
+    }
+    .prep-time-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 12px; color: var(--ac-text-muted); margin-bottom: 8px;
+    }
+    .prep-feedback-cols {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;
+    }
+    @media (max-width: 700px) { .prep-feedback-cols { grid-template-columns: 1fr; } }
+    .prep-feedback-card {
+      background: var(--ac-bg); border: 1px solid var(--ac-border);
+      border-radius: var(--ac-radius-xl); padding: 16px;
+    }
+    .prep-feedback-label {
+      font-size: 12px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.3px; color: var(--ac-text-muted); margin-bottom: 8px;
+    }
+    .prep-feedback-list { padding-left: 18px; font-size: 13px; line-height: 1.7; color: var(--ac-text-secondary); }
+    .prep-feedback-list.strengths li::marker { color: #22c55e; }
+    .prep-feedback-list.improvements li::marker { color: #f59e0b; }
+    .prep-sample-answer {
+      margin-top: 12px; font-size: 13px; color: var(--ac-text-secondary);
+    }
+    .prep-sample-answer summary {
+      cursor: pointer; font-weight: 500; padding: 8px 0;
+    }
+    .prep-sample-answer p {
+      padding: 12px 16px; background: var(--ac-surface-low);
+      border-radius: var(--ac-radius-lg); line-height: 1.6; margin-top: 6px;
+    }
+    .prep-followup-banner {
+      background: #fef3c7; border-radius: var(--ac-radius-lg);
+      padding: 12px 16px; margin-top: 12px; font-size: 13px; color: #92400e;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .prep-followup-banner .btn { flex-shrink: 0; }
+
+    /* Analytics view */
+    .prep-analytics { max-width: 800px; }
+    .prep-analytics-readiness { text-align: center; margin-bottom: 24px; }
+    .prep-stats-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px;
+    }
+    @media (max-width: 700px) { .prep-stats-grid { grid-template-columns: 1fr; } }
+    .prep-stat-card {
+      text-align: center; padding: 16px; background: var(--ac-bg);
+      border-radius: var(--ac-radius-xl); border: 1px solid var(--ac-border);
+    }
+    .prep-stat-value { font-size: 24px; font-weight: 700; color: var(--ac-text); }
+    .prep-stat-label { font-size: 12px; color: var(--ac-text-muted); margin-top: 2px; }
+    .prep-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .prep-bar-label { width: 110px; font-size: 13px; color: var(--ac-text-secondary); }
+    .prep-bar-track {
+      flex: 1; height: 14px; background: var(--ac-surface-mid);
+      border-radius: 7px; overflow: hidden;
+    }
+    .prep-bar-fill { height: 100%; border-radius: 7px; transition: width 0.4s; }
+    .prep-bar-value { width: 40px; text-align: right; font-size: 13px; font-weight: 600; }
+    .prep-weak-list { padding-left: 18px; font-size: 13px; line-height: 1.7; color: var(--ac-text-secondary); }
+    .prep-advice {
+      white-space: pre-wrap; font-size: 14px; line-height: 1.7;
+      color: var(--ac-text-secondary); margin-top: 12px;
+    }
+
+    /* ══════════════════════════════════════════════
        FLOATING SAVE BAR
     ══════════════════════════════════════════════ */
     .floating-save-bar {
@@ -2487,6 +2684,143 @@
         </div>
 
       </div><!-- /tab-applied -->
+
+      <!-- ═══════════════════════════════════════════════
+           VIEW: INTERVIEW PREP (sub-view of My Jobs)
+      ═══════════════════════════════════════════════ -->
+      <div class="tab-content" id="tab-prep">
+        <button class="prep-back-btn" id="prepBackBtn">
+          <span class="material-symbols-outlined" style="font-size:20px;">arrow_back</span>
+          Back to My Jobs
+        </button>
+
+        <div class="prep-job-header" id="prepJobHeader">
+          <div class="prep-job-score" id="prepJobScore"></div>
+          <div>
+            <div class="prep-job-title" id="prepJobTitle"></div>
+            <div class="prep-job-company" id="prepJobCompany"></div>
+          </div>
+        </div>
+
+        <div class="prep-no-jd" id="prepNoJd" style="display:none;">
+          <span class="material-symbols-outlined" style="font-size:18px;">info</span>
+          No job description available. Questions will be based on the job title and your profile only.
+        </div>
+
+        <!-- Start view: category selection -->
+        <div class="prep-section" id="prepStartView">
+          <div class="card">
+            <h2>Interview Prep</h2>
+            <p style="font-size:14px;color:var(--ac-text-secondary);margin-bottom:16px;">
+              Practice with AI-generated questions tailored to this role. Select categories and start.
+            </p>
+            <div class="prep-categories" id="prepCategories">
+              <label class="prep-cat-check"><input type="checkbox" value="behavioral" checked> Behavioral</label>
+              <label class="prep-cat-check"><input type="checkbox" value="technical" checked> Technical</label>
+              <label class="prep-cat-check"><input type="checkbox" value="situational" checked> Situational</label>
+              <label class="prep-cat-check"><input type="checkbox" value="role-specific" checked> Role-Specific</label>
+            </div>
+            <div class="prep-timer-toggle">
+              <label><input type="checkbox" id="prepTimerEnabled" checked> Enable countdown timer (2 min per question)</label>
+            </div>
+            <button class="btn btn-primary" id="prepGenerateBtn">
+              <span class="material-symbols-outlined" style="font-size:18px;">auto_awesome</span>
+              Generate Questions
+            </button>
+          </div>
+        </div>
+
+        <!-- Question list view -->
+        <div class="prep-section" id="prepQuestionList" style="display:none;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <div class="prep-progress" id="prepProgress"></div>
+            <button class="btn btn-sm btn-secondary" id="prepAnalyticsBtn" disabled>View Analytics</button>
+          </div>
+          <div id="prepQList"></div>
+        </div>
+
+        <!-- Answer view -->
+        <div class="prep-answer-section" id="prepAnswerView" style="display:none;">
+          <div id="prepAnsHeader" style="margin-bottom:8px;"></div>
+          <div class="prep-question-display" id="prepAnsQuestion"></div>
+          <div class="prep-timer" id="prepTimer" style="display:none;">2:00</div>
+          <div class="prep-timer-controls" id="prepTimerControls" style="display:none;">
+            <button class="btn btn-sm btn-secondary" id="prepTimerPause">Pause</button>
+          </div>
+          <details class="prep-hints" id="prepHints">
+            <summary>Hints (key points to cover)</summary>
+            <ul id="prepHintsList"></ul>
+          </details>
+          <textarea class="prep-textarea" id="prepAnswerInput" placeholder="Type your answer here..."></textarea>
+          <div class="prep-wordcount" id="prepWordCount">0 words</div>
+          <div class="prep-action-row">
+            <button class="btn btn-secondary" id="prepBackToList">Back to Questions</button>
+            <button class="btn btn-primary" id="prepSubmitAnswer">Submit Answer</button>
+          </div>
+        </div>
+
+        <!-- Feedback view -->
+        <div class="prep-feedback" id="prepFeedbackView" style="display:none;">
+          <div class="prep-feedback-top">
+            <div class="prep-score-circle" id="prepScoreCircle"></div>
+            <div>
+              <div class="prep-time-badge" id="prepTimeBadge"></div>
+              <div id="prepFeedbackQuestion" style="font-size:15px;font-weight:500;color:var(--ac-text);"></div>
+            </div>
+          </div>
+          <div class="prep-feedback-cols">
+            <div class="prep-feedback-card">
+              <div class="prep-feedback-label">Strengths</div>
+              <ul class="prep-feedback-list strengths" id="prepStrengthsList"></ul>
+            </div>
+            <div class="prep-feedback-card">
+              <div class="prep-feedback-label">Areas to Improve</div>
+              <ul class="prep-feedback-list improvements" id="prepImprovementsList"></ul>
+            </div>
+          </div>
+          <details class="prep-sample-answer">
+            <summary>View Sample Answer</summary>
+            <p id="prepSampleAnswer"></p>
+          </details>
+          <div class="prep-followup-banner" id="prepFollowUpBanner" style="display:none;">
+            <span>This area needs more practice. Try a follow-up question.</span>
+            <button class="btn btn-sm btn-primary" id="prepFollowUpBtn">Practice Follow-Up</button>
+          </div>
+          <div class="prep-action-row">
+            <button class="btn btn-secondary" id="prepTryAgain">Try Again</button>
+            <button class="btn btn-primary" id="prepNextQuestion">Next Question</button>
+          </div>
+        </div>
+
+        <!-- Analytics view -->
+        <div class="prep-analytics" id="prepAnalyticsView" style="display:none;">
+          <div class="prep-analytics-readiness">
+            <div class="prep-score-circle" id="prepReadinessCircle" style="width:90px;height:90px;font-size:30px;margin:0 auto;"></div>
+            <p style="margin-top:8px;font-size:13px;color:var(--ac-text-secondary);">Interview Readiness</p>
+          </div>
+          <div class="prep-stats-grid" id="prepStatsGrid"></div>
+          <div class="card" style="margin-bottom:16px;">
+            <h3>Category Scores</h3>
+            <div id="prepCategoryBars"></div>
+          </div>
+          <div class="card" id="prepWeakAreasCard" style="display:none;">
+            <h3>Weak Areas</h3>
+            <ul class="prep-weak-list" id="prepWeakAreasList"></ul>
+          </div>
+          <div class="card" id="prepPositioningCard" style="display:none;">
+            <h3>Positioning Strategy</h3>
+            <div class="prep-advice" id="prepPositioningContent"></div>
+          </div>
+          <div class="prep-action-row">
+            <button class="btn btn-secondary" id="prepAnalyticsBack">Back to Questions</button>
+            <button class="btn btn-primary" id="prepPositioningBtn" disabled>
+              <span class="material-symbols-outlined" style="font-size:18px;">auto_awesome</span>
+              Generate Positioning Advice
+            </button>
+            <button class="btn btn-primary" id="prepFullReportBtn" style="display:none;">View Full Report</button>
+          </div>
+        </div>
+      </div><!-- /tab-prep -->
 
       <!-- ═══════════════════════════════════════════════
            TAB: AI SETTINGS

@@ -2199,15 +2199,10 @@ function renderAppliedJobs(jobs) {
     });
   });
 
-  // Wire prep
+  // Wire prep — opens in-page interview prep view
   container.querySelectorAll('.myjobs-prep-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const url = btn.dataset.url;
-      if (url && url !== '#') {
-        window.open(url, '_blank');
-      } else {
-        showToast('No job URL available for this entry.', 'error');
-      }
+      openPrepView(btn.dataset.id);
     });
   });
 }
@@ -2227,6 +2222,570 @@ function updateFilterCounts(allJobs) {
     }
   });
 }
+
+// ─── Interview Prep (full-page view) ─────────────────────────────────────────
+
+/** Currently active prep job ID, or null if prep view is closed. */
+let _prepJobId = null;
+/** Current prep session (loaded from storage on open, updated on each action). */
+let _prepSession = null;
+/** Active countdown timer interval ID. */
+let _prepTimerInterval = null;
+/** Seconds remaining on current countdown. */
+let _prepTimerSeconds = 0;
+/** Index of question currently being answered. */
+let _prepCurrentQIdx = -1;
+
+const scoreColor = (s) => s >= 70 ? '#22c55e' : s >= 40 ? '#f59e0b' : '#ef4444';
+const qScoreColor = (s) => s >= 7 ? '#22c55e' : s >= 4 ? '#f59e0b' : '#ef4444';
+
+/**
+ * Opens the interview prep view for a given job.
+ * Hides My Jobs, shows prep tab, loads job data and existing session.
+ */
+async function openPrepView(jobId) {
+  const job = _allJobs.find(j => j.id === jobId);
+  if (!job) { showToast('Job not found.', 'error'); return; }
+
+  _prepJobId = jobId;
+
+  // Switch tabs: hide applied, show prep
+  document.getElementById('tab-applied').classList.remove('active');
+  document.getElementById('tab-prep').classList.add('active');
+
+  // Hide floating save bar
+  const saveBar = document.getElementById('floatingSaveBar');
+  if (saveBar) saveBar.style.display = 'none';
+
+  // Update header title
+  if (_headerTitle) _headerTitle.textContent = 'Interview Prep';
+
+  // Populate job header
+  const scorePct = job.score || 0;
+  const scoreEl = document.getElementById('prepJobScore');
+  scoreEl.textContent = scorePct + '%';
+  scoreEl.style.background = scoreColor(scorePct);
+  document.getElementById('prepJobTitle').textContent = job.title || 'Unknown Role';
+  document.getElementById('prepJobCompany').textContent = job.company || 'Unknown Company';
+
+  // Show notice if no JD
+  const hasJD = !!(job.jdText && job.jdText.length > 50) || !!(job.jdDigest);
+  document.getElementById('prepNoJd').style.display = hasJD ? 'none' : '';
+
+  // Reset all sub-views to start state
+  document.getElementById('prepStartView').style.display = '';
+  document.getElementById('prepQuestionList').style.display = 'none';
+  document.getElementById('prepAnswerView').style.display = 'none';
+  document.getElementById('prepFeedbackView').style.display = 'none';
+  document.getElementById('prepAnalyticsView').style.display = 'none';
+  clearPrepTimer();
+
+  // Check for existing session
+  try {
+    const session = await sendMessage({ type: 'GET_INTERVIEW_SESSION', jobId });
+    if (session && session.questions && session.questions.length > 0) {
+      _prepSession = session;
+      renderPrepQuestionList();
+    } else {
+      _prepSession = null;
+    }
+  } catch {
+    _prepSession = null;
+  }
+}
+
+/** Closes the prep view and returns to My Jobs. */
+function closePrepView() {
+  clearPrepTimer();
+  _prepJobId = null;
+  _prepSession = null;
+  _prepCurrentQIdx = -1;
+
+  document.getElementById('tab-prep').classList.remove('active');
+  document.getElementById('tab-applied').classList.add('active');
+
+  if (_headerTitle) _headerTitle.textContent = 'My Jobs';
+}
+
+/** Clears the countdown timer if running. */
+function clearPrepTimer() {
+  if (_prepTimerInterval) {
+    clearInterval(_prepTimerInterval);
+    _prepTimerInterval = null;
+  }
+}
+
+// ── Wire static prep UI buttons ──
+
+document.getElementById('prepBackBtn').addEventListener('click', closePrepView);
+
+document.getElementById('prepBackToList').addEventListener('click', () => {
+  clearPrepTimer();
+  document.getElementById('prepAnswerView').style.display = 'none';
+  document.getElementById('prepFeedbackView').style.display = 'none';
+  document.getElementById('prepQuestionList').style.display = '';
+  renderPrepQuestionList();
+});
+
+document.getElementById('prepAnswerInput').addEventListener('input', (e) => {
+  const words = e.target.value.trim().split(/\s+/).filter(Boolean).length;
+  document.getElementById('prepWordCount').textContent = words + ' words';
+});
+
+// ── Prep view helpers ──
+
+/** Shows one prep sub-view and hides all others. */
+function showPrepSubView(view) {
+  const views = ['prepStartView', 'prepQuestionList', 'prepAnswerView', 'prepFeedbackView', 'prepAnalyticsView'];
+  views.forEach(id => { document.getElementById(id).style.display = 'none'; });
+  const map = {
+    start: 'prepStartView', questionList: 'prepQuestionList',
+    answer: 'prepAnswerView', feedback: 'prepFeedbackView',
+    analytics: 'prepAnalyticsView',
+  };
+  document.getElementById(map[view]).style.display = '';
+}
+
+/** Starts countdown timer for the answer view. */
+function startPrepTimer(seconds, onExpire) {
+  clearPrepTimer();
+  _prepTimerSeconds = seconds;
+  const timerEl = document.getElementById('prepTimer');
+  const controlsEl = document.getElementById('prepTimerControls');
+  timerEl.style.display = '';
+  controlsEl.style.display = 'flex';
+  updatePrepTimerDisplay();
+
+  let paused = false;
+  const pauseBtn = document.getElementById('prepTimerPause');
+  pauseBtn.textContent = 'Pause';
+  pauseBtn.onclick = () => {
+    paused = !paused;
+    pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+  };
+
+  _prepTimerInterval = setInterval(() => {
+    if (paused) return;
+    _prepTimerSeconds--;
+    updatePrepTimerDisplay();
+    if (_prepTimerSeconds <= 0) {
+      clearPrepTimer();
+      if (onExpire) onExpire();
+    }
+  }, 1000);
+}
+
+function updatePrepTimerDisplay() {
+  const timerEl = document.getElementById('prepTimer');
+  if (!timerEl) return;
+  const mins = Math.floor(Math.max(0, _prepTimerSeconds) / 60);
+  const secs = Math.max(0, _prepTimerSeconds) % 60;
+  timerEl.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+  timerEl.className = 'prep-timer';
+  const total = _prepSession?.questions[_prepCurrentQIdx]?.timeLimitSec || 120;
+  const pct = _prepTimerSeconds / total;
+  if (pct <= 0.25) timerEl.classList.add('danger');
+  else if (pct <= 0.5) timerEl.classList.add('warning');
+}
+
+// ── Generate questions ──
+
+document.getElementById('prepGenerateBtn').addEventListener('click', async () => {
+  const categories = [];
+  document.querySelectorAll('#prepCategories input:checked').forEach(cb => categories.push(cb.value));
+  if (categories.length === 0) { showToast('Select at least one category.', 'error'); return; }
+
+  const btn = document.getElementById('prepGenerateBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:18px;">hourglass_top</span> Generating questions...';
+
+  try {
+    const job = _allJobs.find(j => j.id === _prepJobId);
+    const session = await sendMessage({
+      type: 'GENERATE_INTERVIEW_QUESTIONS',
+      jobId: _prepJobId,
+      jobUrl: job?.url || '',
+      categories,
+    });
+    _prepSession = session;
+    renderPrepQuestionList();
+  } catch (err) {
+    showToast('Failed to generate questions: ' + (err.message || err), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:18px;">auto_awesome</span> Generate Questions';
+  }
+});
+
+// ── Render question list ──
+
+function renderPrepQuestionList() {
+  if (!_prepSession) return;
+  const listEl = document.getElementById('prepQList');
+  const progressEl = document.getElementById('prepProgress');
+  const analyticsBtn = document.getElementById('prepAnalyticsBtn');
+  listEl.innerHTML = '';
+
+  const questions = _prepSession.questions || [];
+  const answered = questions.filter(q => q.evaluation).length;
+  progressEl.textContent = `${answered} of ${questions.length} answered`;
+  analyticsBtn.disabled = answered < 3;
+
+  questions.forEach((q, idx) => {
+    const card = document.createElement('div');
+    card.className = 'prep-qcard';
+    card.style.cursor = 'pointer';
+
+    let scoreHTML = '';
+    if (q.evaluation) {
+      const s = q.evaluation.score;
+      scoreHTML = `<div class="prep-qcard-score" style="background:${qScoreColor(s)}">${s}</div>`;
+    }
+
+    card.innerHTML = `
+      <div class="prep-qcard-body">
+        <div class="prep-qcard-top">
+          ${q.isFollowUp ? '<span style="font-size:12px;color:var(--ac-text-muted);">&#8627; Follow-up</span>' : ''}
+          <span class="prep-qcard-pill ${q.category}">${escapeHTML(q.category)}</span>
+          <span class="prep-qcard-diff">${escapeHTML(q.difficulty || '')}</span>
+        </div>
+        <div class="prep-qcard-text">${escapeHTML(q.question)}</div>
+      </div>
+      ${scoreHTML}
+      <div class="prep-qcard-actions">
+        <button class="btn btn-sm ${q.evaluation ? 'btn-secondary' : 'btn-primary'}">${q.evaluation ? 'Review' : 'Answer'}</button>
+      </div>
+    `;
+
+    card.addEventListener('click', () => {
+      _prepCurrentQIdx = idx;
+      if (q.evaluation) {
+        renderPrepFeedbackView(q);
+      } else {
+        renderPrepAnswerView(q);
+      }
+    });
+
+    listEl.appendChild(card);
+  });
+
+  showPrepSubView('questionList');
+}
+
+// ── Answer view ──
+
+function renderPrepAnswerView(question) {
+  const headerEl = document.getElementById('prepAnsHeader');
+  const questionEl = document.getElementById('prepAnsQuestion');
+  const hintsListEl = document.getElementById('prepHintsList');
+  const inputEl = document.getElementById('prepAnswerInput');
+  const wordCountEl = document.getElementById('prepWordCount');
+
+  headerEl.innerHTML = `
+    <span class="prep-qcard-pill ${question.category}">${escapeHTML(question.category)}</span>
+    <span class="prep-qcard-diff">${escapeHTML(question.difficulty || '')}</span>
+  `;
+  questionEl.textContent = question.question;
+
+  hintsListEl.innerHTML = '';
+  (question.keyPoints || []).forEach(kp => {
+    const li = document.createElement('li');
+    li.textContent = kp;
+    hintsListEl.appendChild(li);
+  });
+
+  inputEl.value = question.userAnswer || '';
+  wordCountEl.textContent = '0 words';
+
+  // Timer
+  const timerEnabled = document.getElementById('prepTimerEnabled')?.checked !== false;
+  if (timerEnabled) {
+    startPrepTimer(question.timeLimitSec || 120, () => submitPrepAnswer());
+  } else {
+    document.getElementById('prepTimer').style.display = 'none';
+    document.getElementById('prepTimerControls').style.display = 'none';
+  }
+
+  showPrepSubView('answer');
+  inputEl.focus();
+}
+
+// ── Submit answer ──
+
+document.getElementById('prepSubmitAnswer').addEventListener('click', submitPrepAnswer);
+
+async function submitPrepAnswer() {
+  if (_prepCurrentQIdx < 0 || !_prepSession) return;
+  const inputEl = document.getElementById('prepAnswerInput');
+  const answer = inputEl.value.trim();
+  if (!answer) { showToast('Please type an answer before submitting.', 'error'); return; }
+
+  clearPrepTimer();
+  const q = _prepSession.questions[_prepCurrentQIdx];
+  const timerEnabled = document.getElementById('prepTimerEnabled')?.checked !== false;
+  const totalTime = q.timeLimitSec || 120;
+  const timeSpent = timerEnabled ? (totalTime - Math.max(0, _prepTimerSeconds)) : 0;
+
+  const btn = document.getElementById('prepSubmitAnswer');
+  btn.disabled = true;
+  btn.textContent = 'Evaluating...';
+
+  try {
+    const result = await sendMessage({
+      type: 'EVALUATE_INTERVIEW_ANSWER',
+      jobId: _prepJobId,
+      questionId: q.id,
+      question: q.question,
+      userAnswer: answer,
+      category: q.category,
+      keyPoints: q.keyPoints,
+      timeSpentSec: timeSpent,
+    });
+
+    // Update local session
+    q.userAnswer = answer;
+    q.timeSpentSec = timeSpent;
+    q.answeredAt = Date.now();
+    q.evaluation = result.evaluation;
+    _prepSession.analytics = result.analytics;
+
+    renderPrepFeedbackView(q);
+  } catch (err) {
+    showToast('Evaluation failed: ' + (err.message || err), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Submit Answer';
+  }
+}
+
+// ── Feedback view ──
+
+function renderPrepFeedbackView(question) {
+  if (!question.evaluation) return;
+  const eval_ = question.evaluation;
+  const score = eval_.score;
+
+  const circleEl = document.getElementById('prepScoreCircle');
+  circleEl.textContent = score + '/10';
+  circleEl.style.background = qScoreColor(score);
+
+  const timeBadge = document.getElementById('prepTimeBadge');
+  if (question.timeSpentSec != null) {
+    const limit = question.timeLimitSec || 120;
+    timeBadge.innerHTML = `<span class="material-symbols-outlined" style="font-size:14px;">timer</span> ${question.timeSpentSec}s (${Math.floor(limit / 60)}:${(limit % 60).toString().padStart(2, '0')} limit)`;
+  } else {
+    timeBadge.textContent = '';
+  }
+
+  document.getElementById('prepFeedbackQuestion').textContent = question.question;
+
+  const strengthsList = document.getElementById('prepStrengthsList');
+  strengthsList.innerHTML = '';
+  (eval_.strengths || []).forEach(s => {
+    const li = document.createElement('li');
+    li.textContent = s;
+    strengthsList.appendChild(li);
+  });
+
+  const improvementsList = document.getElementById('prepImprovementsList');
+  improvementsList.innerHTML = '';
+  (eval_.improvements || []).forEach(s => {
+    const li = document.createElement('li');
+    li.textContent = s;
+    improvementsList.appendChild(li);
+  });
+
+  document.getElementById('prepSampleAnswer').textContent = eval_.sampleAnswer || '';
+
+  // Follow-up banner: show if score < 5
+  document.getElementById('prepFollowUpBanner').style.display = score < 5 ? 'flex' : 'none';
+
+  showPrepSubView('feedback');
+}
+
+// ── Follow-up question ──
+
+document.getElementById('prepFollowUpBtn').addEventListener('click', async () => {
+  if (_prepCurrentQIdx < 0 || !_prepSession) return;
+  const q = _prepSession.questions[_prepCurrentQIdx];
+  const btn = document.getElementById('prepFollowUpBtn');
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+
+  try {
+    const result = await sendMessage({
+      type: 'GENERATE_FOLLOWUP_QUESTION',
+      jobId: _prepJobId,
+      parentQuestionId: q.id,
+      question: q.question,
+      userAnswer: q.userAnswer,
+      evaluation: q.evaluation,
+      category: q.category,
+    });
+    _prepSession = result.session;
+    renderPrepQuestionList();
+  } catch (err) {
+    showToast('Follow-up generation failed: ' + (err.message || err), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Practice Follow-Up';
+  }
+});
+
+// ── Next question / Try again ──
+
+document.getElementById('prepNextQuestion').addEventListener('click', () => {
+  if (!_prepSession) return;
+  const questions = _prepSession.questions;
+  // Find next unanswered after current
+  let nextIdx = -1;
+  for (let i = _prepCurrentQIdx + 1; i < questions.length; i++) {
+    if (!questions[i].evaluation) { nextIdx = i; break; }
+  }
+  // Wrap around
+  if (nextIdx < 0) {
+    for (let i = 0; i < _prepCurrentQIdx; i++) {
+      if (!questions[i].evaluation) { nextIdx = i; break; }
+    }
+  }
+  if (nextIdx >= 0) {
+    _prepCurrentQIdx = nextIdx;
+    renderPrepAnswerView(questions[nextIdx]);
+  } else {
+    // All answered — go to question list
+    renderPrepQuestionList();
+  }
+});
+
+document.getElementById('prepTryAgain').addEventListener('click', () => {
+  if (!_prepSession || _prepCurrentQIdx < 0) return;
+  const q = _prepSession.questions[_prepCurrentQIdx];
+  renderPrepAnswerView(q);
+});
+
+// ── Analytics button (from question list header) ──
+
+document.getElementById('prepAnalyticsBtn').addEventListener('click', () => {
+  if (_prepSession) renderPrepAnalytics();
+});
+
+document.getElementById('prepAnalyticsBack').addEventListener('click', () => {
+  renderPrepQuestionList();
+});
+
+// ── Analytics view ──
+
+function renderPrepAnalytics() {
+  if (!_prepSession) return;
+  const analytics = _prepSession.analytics || {};
+
+  // Readiness circle
+  const readiness = analytics.overallReadiness || 0;
+  const readinessEl = document.getElementById('prepReadinessCircle');
+  readinessEl.textContent = readiness + '%';
+  readinessEl.style.background = scoreColor(readiness);
+
+  // Stats grid
+  const statsGrid = document.getElementById('prepStatsGrid');
+  statsGrid.innerHTML = `
+    <div class="prep-stat-card">
+      <div class="prep-stat-value">${analytics.questionsAnswered || 0}/${analytics.questionsTotal || 0}</div>
+      <div class="prep-stat-label">Questions answered</div>
+    </div>
+    <div class="prep-stat-card">
+      <div class="prep-stat-value">${analytics.avgTimePerAnswer ? Math.round(analytics.avgTimePerAnswer) + 's' : '--'}</div>
+      <div class="prep-stat-label">Avg time per answer</div>
+    </div>
+    <div class="prep-stat-card">
+      <div class="prep-stat-value">${analytics.followUpsGenerated || 0}</div>
+      <div class="prep-stat-label">Follow-ups generated</div>
+    </div>
+  `;
+
+  // Category bars
+  const barsEl = document.getElementById('prepCategoryBars');
+  barsEl.innerHTML = '';
+  const cats = analytics.categoryScores || {};
+  for (const [cat, pct] of Object.entries(cats)) {
+    const label = cat.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    barsEl.innerHTML += `
+      <div class="prep-bar-row">
+        <div class="prep-bar-label">${escapeHTML(label)}</div>
+        <div class="prep-bar-track"><div class="prep-bar-fill" style="width:${pct}%;background:${scoreColor(pct)}"></div></div>
+        <div class="prep-bar-value">${pct}%</div>
+      </div>
+    `;
+  }
+
+  // Weak areas
+  const weakCard = document.getElementById('prepWeakAreasCard');
+  const weakList = document.getElementById('prepWeakAreasList');
+  const weakAreas = analytics.weakAreas || [];
+  if (weakAreas.length > 0) {
+    weakCard.style.display = '';
+    weakList.innerHTML = '';
+    weakAreas.forEach(w => {
+      const li = document.createElement('li');
+      li.textContent = w;
+      weakList.appendChild(li);
+    });
+  } else {
+    weakCard.style.display = 'none';
+  }
+
+  // Positioning advice (if already generated)
+  const posCard = document.getElementById('prepPositioningCard');
+  const posContent = document.getElementById('prepPositioningContent');
+  const reportBtn = document.getElementById('prepFullReportBtn');
+  if (analytics.positioningAdvice) {
+    posCard.style.display = '';
+    posContent.textContent = analytics.positioningAdvice;
+    reportBtn.style.display = '';
+  } else {
+    posCard.style.display = 'none';
+    reportBtn.style.display = 'none';
+  }
+
+  // Enable/disable positioning button
+  const posBtn = document.getElementById('prepPositioningBtn');
+  posBtn.disabled = (analytics.questionsAnswered || 0) < 5;
+
+  showPrepSubView('analytics');
+}
+
+// ── Positioning advice ──
+
+document.getElementById('prepPositioningBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('prepPositioningBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:18px;">hourglass_top</span> Generating...';
+
+  try {
+    const result = await sendMessage({
+      type: 'GENERATE_POSITIONING_ADVICE',
+      jobId: _prepJobId,
+    });
+
+    // Update local session
+    if (!_prepSession.analytics) _prepSession.analytics = {};
+    _prepSession.analytics.positioningAdvice = result;
+
+    // Re-render analytics to show the advice
+    renderPrepAnalytics();
+  } catch (err) {
+    showToast('Positioning advice failed: ' + (err.message || err), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:18px;">auto_awesome</span> Generate Positioning Advice';
+  }
+});
+
+// ── Full report link ──
+
+document.getElementById('prepFullReportBtn').addEventListener('click', () => {
+  window.location.hash = 'interview-prep-report&jobId=' + _prepJobId;
+  window.location.reload();
+});
 
 // ─── Profile slot management ──────────────────────────────────────────────────
 // Three named resume slots allow the user to maintain separate profiles for
