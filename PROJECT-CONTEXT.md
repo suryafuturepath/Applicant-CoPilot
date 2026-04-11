@@ -25,14 +25,58 @@ Job seekers applying to **tech, consulting, and product roles** — tired of rep
 ### File Structure
 ```
 extension/
-├── manifest.json          # MV3 manifest, <all_urls> content scripts
-├── background.js          # Service worker: message router, 11 AI handlers, storage, auth
-├── content.js             # Content script: Shadow DOM panel, JD extraction, form detection, autofill, interview prep UI
-├── aiService.js           # 10+ provider abstraction, 9 prompt builders, callAI()
-├── deterministicMatcher.js # Rule-based field matcher (30+ types, zero AI tokens)
-├── supabase-client.js     # Supabase client, session persistence, callEdgeFunction()
-├── profile.html/js        # Full-page profile/settings/report UI
-├── libs/                  # Vendored libraries (pdf.js, mammoth, supabase-bundle)
+├── manifest.json            # MV3 manifest, <all_urls> content scripts
+├── background.js            # Service worker: message router, 11 AI handlers, storage, auth
+├── content.js               # Content script entry: bootstraps panel + all modules
+├── aiService.js             # 10+ provider abstraction, 9 prompt builders, callAI()
+├── deterministicMatcher.js  # Rule-based field matcher (30+ types, zero AI tokens)
+├── keywordMatcher.js        # JD↔Profile keyword matching for auto-scan widget
+├── supabase-client.js       # Supabase client, session persistence, callEdgeFunction()
+├── profile.html/js          # Full-page profile/settings/report UI (left sidebar nav)
+├── fonts/                   # Manrope (variable) + Material Symbols Outlined (icon font)
+├── icons/                   # Extension icons (16/48/128px)
+├── libs/                    # Vendored libraries (pdf.js, mammoth, supabase-bundle)
+└── src/
+    ├── content-main.js      # Panel bootstrap, JD extraction orchestration
+    ├── messaging.js          # Chrome message handler for content script
+    ├── state.js              # Shared state refs (panel, toggle button, shadow root)
+    ├── utils.js              # Shared utilities
+    ├── panel/                # Shadow DOM side panel
+    │   ├── panel-core.js     # Panel creation, show/hide, Shadow DOM setup
+    │   ├── panel-html.js     # Panel HTML markup (3 bottom tabs: Analysis, Coaching, Saved)
+    │   ├── panel-css.js      # Full CSS for panel Shadow DOM (Organic Archive design system)
+    │   ├── panel-events.js   # Panel event listeners and tab switching
+    │   ├── toggle-button.js  # Draggable floating toggle button (separate Shadow DOM)
+    │   ├── slot-switcher.js  # Resume slot state reader
+    │   ├── theme.js          # Dark/light theme toggling
+    │   ├── status.js         # Status bar messages
+    │   └── consent.js        # Data collection consent banner
+    ├── features/             # Feature modules
+    │   ├── analysis.js       # Job analysis handler
+    │   ├── ats-resume.js     # ATS resume generation (2-phase build → preview)
+    │   ├── chat.js           # AI Coach chat (per-URL persistence)
+    │   ├── cover-letter.js   # Cover letter generation
+    │   ├── interview-prep.js # Timed practice, scoring, follow-ups, analytics, report
+    │   ├── save-applied.js   # Save/apply job status management
+    │   └── saved-jobs.js     # Saved jobs list rendering in panel
+    ├── autofill/             # Form autofill pipeline
+    │   ├── autofill-pipeline.js # Main autofill orchestration
+    │   ├── field-detection.js   # Form field type detection
+    │   ├── fill-strategies.js   # Per-field-type fill strategies
+    │   ├── badges.js            # Field status badges
+    │   └── inline-chips.js      # Inline suggestion chips
+    ├── auto-scan/            # Ambient keyword matching
+    │   ├── auto-scan.js      # Auto-scan orchestration
+    │   ├── keyword-matcher.js # JD↔Profile keyword matching logic
+    │   └── score-widget.js   # Floating match score widget on job pages
+    ├── platform/             # Platform-specific JD extraction
+    │   ├── detector.js       # Platform detection (LinkedIn, Workday, etc.)
+    │   ├── jd-extractor.js   # JD extraction dispatcher
+    │   ├── providers/        # Per-platform extractors (LinkedIn, Workday, Greenhouse, etc.)
+    │   └── spa-monitor.js    # SPA navigation detection (URL change watcher)
+    └── storage/              # Local storage helpers
+        ├── analysis-cache.js # Analysis result caching
+        └── job-notes.js      # Per-job notes persistence
 ```
 
 ### Key Data Flows
@@ -81,16 +125,19 @@ background.js handler → callEdgeFunction('generate-answer', body)
 | Feature | Description |
 |---------|------------|
 | **Job Analysis** | Match score + skill gaps + insights against JD |
-| **Ask AI Chat** | In-panel chat with full context (JD + profile + analysis), per-URL persistence |
+| **AI Coach Chat** | In-panel chat with full context (JD + profile + analysis), per-URL persistence |
 | **Cover Letter** | Tailored 4-paragraph letter, copy/download |
 | **ATS Resume** | 2-phase flow (build with instruction chips → preview + PDF download) |
 | **Autofill** | AI-drafted form answers + deterministic field matching |
 | **Interview Prep** | Timed practice, AI scoring 1-10, adaptive follow-ups, analytics, full-page report |
-| **Save Jobs** | Track jobs with analysis + jdDigest, "Mark Applied" toggle |
+| **Job Tracker** | Full pipeline: Saved → Applied → Interview → Offer → Rejected → Withdrawn, with filter tabs and status dropdowns |
+| **Auto-Scan Widget** | Ambient keyword match score widget on job pages (no click required) |
 | **Configurable Prompts** | 9 editable system prompts in Settings |
 | **Token Controls** | 5 budget sliders (resume, analysis, cover letter, chat, interview prep) |
 | **JD Expansion** | Auto-clicks "Show more" on LinkedIn/Workday/Indeed before extraction |
 | **Diagnostic System** | 4-layer health check (settings, auth, Edge Function, local AI) |
+| **Conversational Intake** | Guided onboarding flow (7 sections) for building applicant context |
+| **Multi-Resume** | Upload up to 10 resume versions, set primary, preview raw text |
 
 ### Platform Support
 | Priority | Platform | Status |
@@ -138,13 +185,21 @@ background.js handler → callEdgeFunction('generate-answer', body)
 | **4.5: Configurable Prompts** | 2026-03-31 | 8 editable prompts, token budget sliders, Edge Function prompt fixes |
 | **5a: Edge Function Fix** | 2026-04-01 | Root cause: `verify_jwt` gateway rejection. Fixed with `--no-verify-jwt`. 4-layer diagnostic, `[EDGE]` logging on all 11 handlers, action_type on all calls, provider error reporting |
 | **5b: Interview Prep + JD** | 2026-04-01 | Interview prep feature (timed practice, scoring, follow-ups, analytics, report). JD expansion (clicks "Show more"). Digest saved with jobs as `jdDigest` for reliable offline access. Token budget fix (2048→4096). JSON format always appended to custom prompts. |
+| **6: Data Collection** | 2026-04-05 | Data collection consent layer, scoring infrastructure, ship preparation |
+| **6.5: Modular Refactor** | 2026-04-07 | Split monolithic content.js into 33 ESM modules under `src/`, esbuild bundler added |
+| **7: Auto-Scan Widget** | 2026-04-08 | Ambient keyword match score widget on job pages, click-outside dismiss |
+| **7.5: Design System** | 2026-04-09 | "Organic Archive" sage design system, Manrope font, provider-specific JD extractors |
+| **8: Unified Job Tracker** | 2026-04-10 | Full job pipeline (Saved → Applied → Interview → Offer → Rejected → Withdrawn), auto-detect applications, status management with filter tabs |
+| **8.5: UI Rebuild** | 2026-04-10 | Full profile page rebuild — left sidebar nav (User Context / My Jobs / AI Settings), Stitch-inspired layout, match score rings on job cards |
+| **9: Icon System** | 2026-04-11 | Replace all emojis with self-hosted Material Symbols Outlined icons, fix Save Profile button visibility per tab |
 
 ### Remaining Manual Steps
 - [ ] Create `resumes` storage bucket in Supabase Dashboard
 - [ ] End-to-end integration test (see testplanMVP.md)
 - [ ] Re-enable rate limiting before production launch
 
-### Next: Phase 6 — Ship & Scale
+### Next: Phase 10 — Ship & Scale
+- Chrome Web Store submission (see `Chrome Web store checklist.md`)
 - WXT + TypeScript migration
 - Server-side prompt management (admin pushes prompts via Supabase table)
 - Full Workday field handler port from job_app_filler
@@ -153,12 +208,27 @@ background.js handler → callEdgeFunction('generate-answer', body)
 
 ---
 
+## Design System — "The Organic Archive"
+
+| Token | Value |
+|-------|-------|
+| **Primary** | `#4f614d` (Sage green) |
+| **Primary Gradient** | `linear-gradient(135deg, #4f614d, #677965)` |
+| **Background** | `#f9f9f8` (panel), `#ffffff` (profile page) |
+| **Surfaces** | `#f3f4f3` (low) → `#edeeed` (mid) → `#e4e5e3` (high) |
+| **Text** | `#191c1c` (primary), `#434842` (secondary), `#727971` (muted) |
+| **Font** | Manrope (variable, self-hosted woff2) |
+| **Icons** | Material Symbols Outlined (self-hosted woff2, ligature-based) |
+| **Radius** | 8px (small), 12px (medium), 16px (large) |
+
 ## Conventions
 
 - **Files**: `kebab-case.js` | **Components**: `PascalCase.tsx` | **DB**: `snake_case` | **Constants**: `UPPER_SNAKE_CASE`
 - **Git**: Conventional commits (`feat:`, `fix:`, `chore:`, `docs:`), feature branches
 - **Prompts**: Dedicated builder functions in `aiService.js`, all accept `promptOverride`
 - **Edge Function calls**: Always include `action_type`, logged with `[EDGE]` prefix
+- **Icons**: Use `<span class="material-symbols-outlined">icon_name</span>` — never emoji characters
+- **Panel isolation**: Side panel runs in Shadow DOM; fonts loaded via `chrome.runtime.getURL()`
 
 ## Documentation
 
@@ -168,8 +238,11 @@ background.js handler → callEdgeFunction('generate-answer', body)
 | `CLAUDE.md` | Claude Code instructions (condensed reference) |
 | `SETUP-GUIDE.md` | Step-by-step local setup |
 | `testplanMVP.md` | 15-test MVP test plan |
+| `Chrome Web store checklist.md` | Chrome Web Store submission checklist |
+| `docs/FSD-Applicant-Copilot.md` | Full specification document |
 | `docs/PHASE-5-INTERVIEW-PREP-LEARNINGS.md` | Detailed bug analysis from Phase 5 session |
 | `docs/archive/` | Completed planning artifacts |
+| `PLAN-*.md` | Implementation plans (passed from `/plan` to `/execute`) |
 
 ## Repository
 **GitHub**: https://github.com/suryafuturepath/Applicant-CoPilot

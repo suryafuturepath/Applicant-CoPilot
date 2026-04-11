@@ -10,18 +10,22 @@ Chrome extension copilot for job applicants. Forked from JobMatchAI (MIT), enhan
 - **Architecture ref**: `research/repos/workday-copilot/` (WXT + React + TS)
 
 ## Tech Stack
-- **Extension**: Vanilla JS, Manifest V3, Shadow DOM panel, no build step
+- **Extension**: Vanilla JS, Manifest V3, Shadow DOM panel, modular ESM under `extension/src/`
 - **Backend**: Supabase (Auth, PostgreSQL + RLS, Storage, Edge Functions)
-- **LLM Backend**: Groq Llama 3.3 70B (primary) → Gemini 2.0 Flash (fallback) via Edge Function
-- **LLM Local**: 10+ providers via aiService.js abstraction (default: Claude Sonnet 4)
-- **Validation**: Zod (planned for Week 2+ TypeScript migration)
+- **LLM Backend**: Gemini 2.0 Flash (primary) → Groq Llama 3.3 70B (fallback) via Edge Function
+- **LLM Local**: 10+ providers via aiService.js abstraction (default: Gemini Flash)
+- **Design**: "Organic Archive" sage design system, Manrope font, Material Symbols Outlined icons
+- **Validation**: Zod (planned for TypeScript migration)
 
 ## Key Architecture
 - All backend LLM calls go through Supabase Edge Functions — NEVER from the extension directly
+- **Modular ESM**: Content script split into `src/` modules (panel, features, autofill, auto-scan, platform, storage)
 - **JD digest pipeline**: Raw JD → one AI call → structured digest (~500 tokens) → cached per URL → reused by all operations
 - **Profile slicing**: `sliceProfileForOperation()` sends only relevant profile fields per operation
 - **Deterministic matcher**: 30+ field types handled without AI (name, email, EEO, yes/no, URLs)
 - **Server-side cache**: `jd_cache` table caches AI responses per user/JD/operation (7-day TTL)
+- **Icons**: Use Material Symbols Outlined (`<span class="material-symbols-outlined">icon_name</span>`) — never emoji characters
+- **Fonts**: Self-hosted woff2 (Manrope + Material Symbols), loaded via `chrome.runtime.getURL()` in Shadow DOM
 - Prompts live in dedicated builder functions in `aiService.js`
 - Log all token usage for billing
 - Do NOT copy code from AIHawk (AGPL) — study patterns, reimplement independently
@@ -69,4 +73,4 @@ Chrome extension copilot for job applicants. Forked from JobMatchAI (MIT), enhan
 - **GitHub**: https://github.com/suryafuturepath/Applicant-CoPilot
 
 ## Current Phase
-Phase 5b complete (2026-04-01). All features working: Job Analysis, Ask AI Chat, Cover Letter, ATS Resume, Autofill, Interview Prep (timed practice, AI scoring, follow-ups, analytics, report). Edge Function: Gemini (primary) → Groq (fallback), deployed with `--no-verify-jwt`. JD expansion clicks "Show more" on LinkedIn/Workday/Indeed. Digest saved with jobs as `jdDigest` for reliable offline access. 9 configurable prompts, 5 token budget sliders. Next: Phase 6 — WXT migration, billing, Workday handlers. See PROJECT-CONTEXT.md for full status.
+Phase 9 complete (2026-04-11). All features working: Job Analysis, AI Coach Chat, Cover Letter, ATS Resume, Autofill, Interview Prep, Job Tracker (full pipeline), Auto-Scan Widget. Codebase modularized into 33 ESM modules under `src/`. UI rebuilt with "Organic Archive" sage design system — left sidebar nav (User Context / My Jobs / AI Settings), Material Symbols icons throughout, Manrope font. Edge Function: Gemini (primary) → Groq (fallback), deployed with `--no-verify-jwt`. Next: Phase 10 — Chrome Web Store submission, WXT migration, billing, Workday handlers. See PROJECT-CONTEXT.md for full status.
