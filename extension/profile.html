@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Applicant Copilot – Profile & Settings</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    /* ── Reset ── */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
     /* ── The Organic Archive — Sage Design System ── */
     @font-face {
@@ -16,10 +17,11 @@
       font-display: swap;
     }
 
-    body {
+    :root {
       --ac-primary: #4f614d;
+      --ac-primary-dark: #384937;
       --ac-primary-hover: #3d4d3b;
-      --ac-primary-gradient: linear-gradient(135deg, #4f614d, #677965);
+      --ac-primary-gradient: linear-gradient(145deg, #4f614d 0%, #384937 100%);
       --ac-bg: #ffffff;
       --ac-card-bg: #ffffff;
       --ac-surface-low: #f3f4f3;
@@ -32,12 +34,15 @@
       --ac-tag-bg: #e8ede7;
       --ac-tag-text: #3d4d3b;
       --ac-hover-bg: #eef0ee;
-      --ac-input-bg: #ffffff;
-      --ac-shadow: rgba(25, 28, 28, 0.06);
+      --ac-input-bg: #f3f4f3;
+      --ac-shadow: rgba(26, 28, 28, 0.06);
+      --ac-botanical-shadow: 0 12px 32px rgba(26, 28, 28, 0.06);
       --ac-page-bg: #f9f9f8;
-      --ac-header-bg: #4f614d;
-      --ac-secondary: #465f88;
-      --ac-secondary-fixed: #d6e3ff;
+      --ac-sidebar-width: 240px;
+      --ac-timeline-color: #d4e8cf;
+      --ac-cert-bg: #dfe4dc;
+      --ac-radius-xl: 12px;
+      --ac-radius-lg: 8px;
     }
 
     body {
@@ -47,73 +52,303 @@
       line-height: 1.5;
     }
 
-    .header {
-      background: var(--ac-header-bg);
-      color: white;
-      padding: 20px 32px;
+    /* ── Custom Scrollbar ── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--ac-timeline-color); border-radius: 2px; }
+
+    /* ══════════════════════════════════════════════
+       SIDEBAR
+    ══════════════════════════════════════════════ */
+    .sidebar {
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      width: var(--ac-sidebar-width);
+      background: var(--ac-surface-low);
+      border-right: 1px solid var(--ac-border);
       display: flex;
-      align-items: center;
-      gap: 16px;
+      flex-direction: column;
+      z-index: 100;
+      overflow-y: auto;
     }
 
-    .header h1 { font-size: 22px; font-weight: 600; }
-    .header .subtitle { opacity: 0.85; font-size: 13px; }
+    .sidebar-brand { padding: 24px 20px 8px; }
 
-    .jm-theme-btn-profile {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      border: 2px solid rgba(255,255,255,0.4);
-      cursor: pointer;
+    .sidebar-brand-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .sidebar-logo {
+      width: 32px; height: 32px;
+      background: #384937;
+      border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: rgba(255,255,255,0.15);
-      color: #fff;
-      font-size: 16px;
-      transition: background 0.15s;
-      margin-left: auto;
       flex-shrink: 0;
-      padding: 0;
     }
-    .jm-theme-btn-profile:hover { background: rgba(255,255,255,0.3); }
 
-    .tabs {
+    .sidebar-logo svg { width: 18px; height: 18px; }
+
+    .sidebar-brand-text {
+      font-size: 16px;
+      font-weight: 700;
+      color: #384937;
+      letter-spacing: -0.3px;
+    }
+
+    .sidebar-subtitle {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--ac-text-muted);
+      margin: 6px 0 0 42px;
+    }
+
+    .sidebar-nav { padding: 20px 12px; flex: 1; }
+
+    .sidebar-nav-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--ac-text-muted);
+      padding: 0 8px;
+      margin-bottom: 8px;
+    }
+
+    .sidebar-nav-item {
       display: flex;
-      background: var(--ac-bg);
-      border-bottom: 2px solid var(--ac-border);
-      padding: 0 32px;
-    }
-
-    .tab {
-      padding: 14px 24px;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: var(--ac-radius-lg);
       cursor: pointer;
       font-size: 14px;
       font-weight: 500;
       color: var(--ac-text-secondary);
-      border-bottom: 2px solid transparent;
-      margin-bottom: -2px;
-      transition: all 0.2s;
+      transition: all 0.15s;
+      margin-bottom: 2px;
+      border: none;
+      background: none;
+      width: 100%;
+      text-align: left;
+      font-family: inherit;
     }
 
-    .tab:hover { color: var(--ac-primary); }
-    .tab.active { color: var(--ac-primary); border-bottom-color: var(--ac-primary); }
+    .sidebar-nav-item:hover { background: var(--ac-hover-bg); color: var(--ac-text); }
+
+    .sidebar-nav-item.active {
+      background: var(--ac-bg);
+      color: var(--ac-primary);
+      font-weight: 600;
+      box-shadow: 0 1px 3px var(--ac-shadow);
+    }
+
+    .sidebar-nav-icon {
+      width: 20px; height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+      opacity: 0.8;
+    }
+
+    .sidebar-nav-item.active .sidebar-nav-icon { opacity: 1; }
+
+    .sidebar-bottom {
+      padding: 16px 12px;
+      border-top: 1px solid var(--ac-border);
+    }
+
+    .sidebar-auth-signin {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: var(--ac-radius-lg);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--ac-text-secondary);
+      background: var(--ac-bg);
+      border: 1px solid var(--ac-border);
+      width: 100%;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+
+    .sidebar-auth-signin:hover { border-color: var(--ac-primary); color: var(--ac-text); }
+
+    .sidebar-user-info {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      font-size: 13px;
+      color: var(--ac-text-secondary);
+    }
+
+    .sidebar-user-info .user-name {
+      flex: 1;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sidebar-signout-btn {
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--ac-border);
+      background: var(--ac-bg);
+      color: var(--ac-text-muted);
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+
+    .sidebar-signout-btn:hover { border-color: #dc2626; color: #dc2626; }
+
+    /* ══════════════════════════════════════════════
+       TOP HEADER BAR
+    ══════════════════════════════════════════════ */
+    .top-header {
+      position: fixed;
+      top: 0;
+      left: var(--ac-sidebar-width);
+      right: 0;
+      height: 56px;
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--ac-border);
+      display: flex;
+      align-items: center;
+      padding: 0 32px;
+      z-index: 90;
+    }
+
+    .top-header-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--ac-text);
+    }
+
+    .top-header-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .top-header-icon-btn {
+      width: 32px; height: 32px;
+      border-radius: var(--ac-radius-lg);
+      border: 1px solid var(--ac-border);
+      background: var(--ac-bg);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      color: var(--ac-text-secondary);
+      transition: all 0.15s;
+    }
+
+    .top-header-icon-btn:hover { border-color: var(--ac-primary); color: var(--ac-primary); }
+
+    /* ══════════════════════════════════════════════
+       MAIN CONTENT AREA
+    ══════════════════════════════════════════════ */
+    .main-content {
+      margin-left: var(--ac-sidebar-width);
+      padding-top: 56px;
+      min-height: 100vh;
+    }
 
     .container {
-      max-width: 900px;
-      margin: 24px auto;
-      padding: 0 24px;
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 32px 40px 120px;
     }
 
     .tab-content { display: none; }
     .tab-content.active { display: block; }
 
+    /* ══════════════════════════════════════════════
+       EDITORIAL TYPOGRAPHY
+    ══════════════════════════════════════════════ */
+    .page-eyebrow {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      color: var(--ac-primary);
+    }
+
+    .page-title {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--ac-text);
+      margin: 4px 0 8px;
+    }
+
+    .page-subtitle {
+      font-size: 14px;
+      color: var(--ac-text-muted);
+      max-width: 600px;
+      line-height: 1.6;
+    }
+
+    .page-header { margin-bottom: 32px; }
+
+    .section-heading {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--ac-text);
+      margin-bottom: 4px;
+      letter-spacing: -0.2px;
+    }
+
+    .section-subheading {
+      font-size: 13px;
+      color: var(--ac-text-muted);
+      margin-bottom: 20px;
+    }
+
+    .section-divider {
+      border: none;
+      border-top: 1px solid var(--ac-border);
+      margin: 36px 0;
+    }
+
+    .field-label {
+      display: block;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--ac-text-muted);
+      margin-bottom: 6px;
+    }
+
+    /* ══════════════════════════════════════════════
+       CARDS
+    ══════════════════════════════════════════════ */
     .card {
       background: var(--ac-bg);
-      border-radius: 12px;
+      border-radius: var(--ac-radius-xl);
       padding: 24px;
       margin-bottom: 20px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      box-shadow: var(--ac-botanical-shadow);
+      border: 1px solid var(--ac-border);
     }
 
     .card h2 {
@@ -130,6 +365,9 @@
       color: var(--ac-text-secondary);
     }
 
+    /* ══════════════════════════════════════════════
+       FORMS & INPUTS
+    ══════════════════════════════════════════════ */
     label {
       display: block;
       font-size: 13px;
@@ -143,47 +381,23 @@
     textarea, select {
       width: 100%;
       padding: 10px 12px;
-      border: 1px solid var(--ac-border);
-      border-radius: 8px;
+      border: none;
+      border-radius: var(--ac-radius-lg);
       font-size: 14px;
       font-family: inherit;
-      transition: border-color 0.2s;
+      transition: border-color 0.2s, box-shadow 0.2s;
       margin-bottom: 12px;
       background: var(--ac-input-bg);
       color: var(--ac-text);
+      border-bottom: 2px solid transparent;
     }
 
     input:focus, textarea:focus, select:focus {
       outline: none;
-      border-color: var(--ac-primary);
-      box-shadow: 0 0 0 3px var(--ac-shadow);
+      border-bottom: 2px solid var(--ac-primary-dark);
     }
 
     textarea { min-height: 80px; resize: vertical; }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 10px 20px;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .btn-primary { background: var(--ac-primary); color: white; }
-    .btn-primary:hover { background: var(--ac-primary-hover); }
-    .btn-secondary { background: var(--ac-border); color: var(--ac-text-secondary); }
-    .btn-secondary:hover { background: var(--ac-hover-bg); }
-    .btn-danger { background: #fee2e2; color: #dc2626; }
-    .btn-danger:hover { background: #fecaca; }
-    .btn-success { background: #d1fae5; color: #059669; }
-    .btn-sm { padding: 6px 14px; font-size: 13px; }
-
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
     .form-row {
       display: grid;
@@ -191,15 +405,129 @@
       gap: 16px;
     }
 
-    /* Upload zone */
-    .upload-zone {
-      border: 2px dashed var(--ac-border);
-      border-radius: 12px;
-      padding: 40px;
-      text-align: center;
+    /* ══════════════════════════════════════════════
+       BUTTONS
+    ══════════════════════════════════════════════ */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 20px;
+      border: none;
+      border-radius: var(--ac-radius-lg);
+      font-size: 14px;
+      font-weight: 500;
       cursor: pointer;
       transition: all 0.2s;
-      margin-bottom: 16px;
+      font-family: inherit;
+    }
+
+    .btn-primary {
+      background: var(--ac-primary-gradient);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      filter: brightness(1.1);
+      box-shadow: 0 4px 12px rgba(56, 73, 55, 0.3);
+    }
+
+    .btn-secondary { background: var(--ac-surface-mid); color: var(--ac-text-secondary); }
+    .btn-secondary:hover { background: var(--ac-hover-bg); }
+    .btn-danger { background: #fee2e2; color: #dc2626; }
+    .btn-danger:hover { background: #fecaca; }
+    .btn-success { background: #d1fae5; color: #059669; }
+    .btn-sm { padding: 6px 14px; font-size: 13px; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ══════════════════════════════════════════════
+       RESUME CARDS (horizontal scroll)
+    ══════════════════════════════════════════════ */
+    .resume-cards-container {
+      display: flex;
+      gap: 16px;
+      overflow-x: auto;
+      padding-bottom: 8px;
+      margin-bottom: 20px;
+    }
+
+    .resume-card {
+      min-width: 160px;
+      max-width: 180px;
+      padding: 20px 16px;
+      border-radius: var(--ac-radius-xl);
+      border: 2px solid var(--ac-border);
+      background: var(--ac-bg);
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+      text-align: center;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      position: relative;
+    }
+
+    .resume-card:hover {
+      border-color: var(--ac-primary);
+      background: var(--ac-hover-bg);
+    }
+
+    .resume-card.active {
+      border-color: var(--ac-primary);
+      box-shadow: 0 0 0 1px var(--ac-primary);
+    }
+
+    .resume-card .primary-badge {
+      position: absolute;
+      top: 8px; right: 8px;
+      font-size: 8px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      background: var(--ac-primary-dark);
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .resume-card-icon {
+      font-size: 28px;
+      line-height: 1;
+      opacity: 0.7;
+    }
+
+    .resume-card-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ac-text);
+      word-break: break-word;
+    }
+
+    .resume-card-date {
+      font-size: 11px;
+      color: var(--ac-text-muted);
+    }
+
+    /* Upload zone card */
+    .upload-zone {
+      min-width: 160px;
+      max-width: 180px;
+      padding: 20px 16px;
+      border-radius: var(--ac-radius-xl);
+      border: 2px dashed var(--ac-border);
+      background: transparent;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
     }
 
     .upload-zone:hover, .upload-zone.drag-over {
@@ -207,13 +535,13 @@
       background: var(--ac-hover-bg);
     }
 
-    .upload-zone .icon { font-size: 36px; margin-bottom: 8px; }
-    .upload-zone .text { font-size: 14px; color: var(--ac-text-secondary); }
-    .upload-zone .hint { font-size: 12px; color: var(--ac-text-muted); margin-top: 4px; }
+    .upload-zone-icon { font-size: 28px; opacity: 0.5; }
+    .upload-zone-text { font-size: 13px; font-weight: 500; color: var(--ac-text-muted); }
+    .upload-zone-hint { font-size: 11px; color: var(--ac-text-muted); opacity: 0.7; }
 
     .upload-status {
       padding: 10px 16px;
-      border-radius: 8px;
+      border-radius: var(--ac-radius-lg);
       font-size: 13px;
       margin-bottom: 16px;
       display: none;
@@ -223,7 +551,19 @@
     .upload-status.error { display: block; background: #fee2e2; color: #dc2626; }
     .upload-status.loading { display: block; background: #dbeafe; color: #1e40af; }
 
-    /* Skills tags */
+    /* Slot rename row */
+    .slot-rename-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .slot-rename-row input { margin-bottom: 0; flex: 1; }
+
+    /* ══════════════════════════════════════════════
+       SKILLS / CERTS TAGS
+    ══════════════════════════════════════════════ */
     .skills-container {
       display: flex;
       flex-wrap: wrap;
@@ -235,11 +575,12 @@
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      padding: 4px 12px;
+      padding: 5px 14px;
       background: var(--ac-tag-bg);
       color: var(--ac-tag-text);
       border-radius: 20px;
       font-size: 13px;
+      font-weight: 500;
     }
 
     .skill-tag .remove {
@@ -251,6 +592,27 @@
 
     .skill-tag .remove:hover { opacity: 1; }
 
+    .cert-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 14px;
+      background: var(--ac-cert-bg);
+      color: var(--ac-tag-text);
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .cert-tag .remove {
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      opacity: 0.6;
+    }
+
+    .cert-tag .remove:hover { opacity: 1; }
+
     .skill-input-row {
       display: flex;
       gap: 8px;
@@ -258,13 +620,97 @@
 
     .skill-input-row input { margin-bottom: 0; }
 
-    /* Experience / Education entries */
-    .entry {
-      border: 1px solid var(--ac-border);
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 12px;
+    /* ══════════════════════════════════════════════
+       EXPERIENCE TIMELINE
+    ══════════════════════════════════════════════ */
+    .experience-timeline {
+      position: relative;
+      padding-left: 28px;
     }
+
+    .experience-timeline::before {
+      content: '';
+      position: absolute;
+      left: 8px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--ac-timeline-color);
+    }
+
+    .experience-entry {
+      position: relative;
+      margin-bottom: 20px;
+    }
+
+    .experience-entry::before {
+      content: '';
+      position: absolute;
+      left: -24px;
+      top: 20px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--ac-primary);
+      border: 2px solid var(--ac-timeline-color);
+    }
+
+    .experience-card {
+      background: var(--ac-bg);
+      border: 1px solid var(--ac-border);
+      border-radius: var(--ac-radius-xl);
+      padding: 16px 20px;
+      transition: border-color 0.15s;
+    }
+
+    .experience-card:hover { border-color: var(--ac-primary); }
+
+    .experience-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+
+    .experience-card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--ac-text);
+      letter-spacing: -0.2px;
+    }
+
+    .experience-card-company {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--ac-primary);
+    }
+
+    .experience-card-dates {
+      font-size: 12px;
+      color: var(--ac-text-muted);
+      margin-bottom: 8px;
+    }
+
+    .experience-card-desc {
+      font-size: 13px;
+      color: var(--ac-text-secondary);
+      line-height: 1.6;
+    }
+
+    /* ══════════════════════════════════════════════
+       EDUCATION CARDS (sage left border)
+    ══════════════════════════════════════════════ */
+    .education-entry {
+      border: 1px solid var(--ac-border);
+      border-left: 4px solid var(--ac-primary);
+      border-radius: var(--ac-radius-xl);
+      padding: 16px 20px;
+      margin-bottom: 12px;
+      background: var(--ac-bg);
+      transition: border-color 0.15s;
+    }
+
+    .education-entry:hover { border-color: var(--ac-primary); border-left-color: var(--ac-primary-dark); }
 
     .entry-header {
       display: flex;
@@ -275,407 +721,488 @@
 
     .entry-header h4 { font-size: 14px; color: var(--ac-text); }
 
-    /* Intake flow */
-    .intake-layout {
-      display: grid;
-      grid-template-columns: 220px 1fr;
-      gap: 20px;
-      min-height: 500px;
-    }
-
-    .intake-sidebar {
-      border-right: 1px solid var(--ac-border);
-      padding-right: 16px;
-    }
-
-    .intake-sidebar-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 12px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 13px;
-      color: var(--ac-text-secondary);
-      transition: all 0.15s;
-      margin-bottom: 4px;
-    }
-
-    .intake-sidebar-item:hover { background: var(--ac-hover-bg); }
-    .intake-sidebar-item.active { background: var(--ac-hover-bg); color: var(--ac-text); font-weight: 600; }
-    .intake-sidebar-item.complete { color: #059669; }
-
-    .intake-sidebar-icon {
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      border: 2px solid var(--ac-border);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 11px;
-      flex-shrink: 0;
-    }
-
-    .intake-sidebar-item.complete .intake-sidebar-icon {
-      background: #d1fae5;
-      border-color: #059669;
-      color: #059669;
-    }
-
-    .intake-sidebar-item.active .intake-sidebar-icon {
-      border-color: var(--ac-primary);
-      color: var(--ac-primary);
-    }
-
-    .intake-progress-bar {
-      height: 6px;
-      background: var(--ac-border);
-      border-radius: 3px;
-      margin-bottom: 20px;
-      overflow: hidden;
-    }
-
-    .intake-progress-fill {
-      height: 100%;
-      background: var(--ac-primary);
-      border-radius: 3px;
-      transition: width 0.3s ease;
-    }
-
-    .intake-main { padding: 0 4px; }
-
-    .intake-section-title {
-      font-size: 18px;
-      font-weight: 700;
-      color: var(--ac-text);
-      margin-bottom: 4px;
-    }
-
-    .intake-section-desc {
-      font-size: 13px;
-      color: var(--ac-text-secondary);
-      margin-bottom: 24px;
-    }
-
-    .intake-question-label {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--ac-text);
-      margin-bottom: 8px;
-    }
-
-    .intake-question-hint {
-      font-size: 12px;
-      color: var(--ac-text-muted);
-      margin-bottom: 8px;
-    }
-
-    .intake-answer-input {
-      width: 100%;
-      padding: 10px 12px;
+    /* Legacy entry class compat */
+    .entry {
       border: 1px solid var(--ac-border);
-      border-radius: 8px;
-      font-size: 14px;
-      font-family: inherit;
-      background: var(--ac-input-bg);
-      color: var(--ac-text);
-      transition: border-color 0.2s;
-      margin-bottom: 16px;
-    }
-
-    .intake-answer-input:focus {
-      outline: none;
-      border-color: var(--ac-primary);
-      box-shadow: 0 0 0 3px var(--ac-shadow);
-    }
-
-    textarea.intake-answer-input { min-height: 80px; resize: vertical; }
-
-    .intake-nav {
-      display: flex;
-      gap: 8px;
-      margin-top: 8px;
-      padding-top: 16px;
-      border-top: 1px solid var(--ac-border);
-    }
-
-    .intake-nav .btn { min-width: 90px; }
-    .intake-nav .spacer { flex: 1; }
-
-    .intake-question-counter {
-      font-size: 12px;
-      color: var(--ac-text-muted);
-      margin-bottom: 16px;
-    }
-
-    /* Review screen */
-    .intake-review-section {
-      margin-bottom: 20px;
-      border: 1px solid var(--ac-border);
-      border-radius: 8px;
-      padding: 16px;
-    }
-
-    .intake-review-section h3 {
-      font-size: 14px;
-      font-weight: 600;
-      margin-bottom: 12px;
-      color: var(--ac-text);
-      cursor: pointer;
-    }
-
-    .intake-review-section h3:hover { color: var(--ac-primary); }
-
-    .intake-review-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      padding: 6px 0;
-      font-size: 13px;
-      border-bottom: 1px solid var(--ac-border);
-    }
-
-    .intake-review-item:last-child { border-bottom: none; }
-
-    .intake-review-q { color: var(--ac-text-secondary); flex: 0 0 40%; }
-    .intake-review-a { color: var(--ac-text); flex: 1; text-align: right; }
-    .intake-review-a.empty { color: var(--ac-text-muted); font-style: italic; }
-
-    /* Text dump section */
-    .text-dump-entry {
-      border: 1px solid var(--ac-border);
-      border-radius: 8px;
+      border-radius: 10px;
       padding: 16px;
       margin-bottom: 12px;
+      transition: border-color 0.15s;
     }
 
-    .text-dump-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 8px;
-    }
+    .entry:hover { border-color: var(--ac-primary); }
 
-    .text-dump-header select {
-      width: auto;
-      margin-bottom: 0;
-      padding: 4px 8px;
-      font-size: 12px;
-    }
-
-    .text-dump-char-count {
-      font-size: 11px;
-      color: var(--ac-text-muted);
-      text-align: right;
-      margin-top: 4px;
-    }
-
-    /* API key */
-    .api-key-row {
-      display: flex;
-      gap: 8px;
-      align-items: flex-start;
-    }
-
-    .api-key-row input { flex: 1; margin-bottom: 0; }
-
-    /* Settings grid */
-    .settings-row {
+    /* ══════════════════════════════════════════════
+       FEATURED PROJECTS (2-column grid)
+    ══════════════════════════════════════════════ */
+    .projects-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 16px;
-      margin-bottom: 12px;
+      margin-bottom: 16px;
     }
 
-    .slider-container {
-      display: flex;
-      align-items: center;
-      gap: 12px;
+    .project-card {
+      background: var(--ac-bg);
+      border: 1px solid var(--ac-border);
+      border-radius: var(--ac-radius-xl);
+      padding: 20px;
+      transition: border-color 0.15s;
     }
 
-    .slider-container input[type="range"] {
-      flex: 1;
-      margin-bottom: 0;
-      border: none;
-      padding: 0;
-      box-shadow: none;
+    .project-card:hover { border-color: var(--ac-primary); }
+
+    .project-card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--ac-text);
+      margin-bottom: 6px;
     }
 
-    .slider-value {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--ac-primary);
-      min-width: 32px;
-    }
-
-    .test-result {
-      padding: 10px 16px;
-      border-radius: 8px;
+    .project-card-desc {
       font-size: 13px;
-      margin-top: 12px;
-      display: none;
+      color: var(--ac-text-secondary);
+      line-height: 1.6;
+      margin-bottom: 10px;
     }
 
-    .test-result.success { display: block; background: #d1fae5; color: #059669; }
-    .test-result.error { display: block; background: #fee2e2; color: #dc2626; }
+    .project-card-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
 
-    /* Token budget controls */
-    .token-budget-row {
-      padding: 12px 0;
-      border-bottom: 1px solid #f1f5f9;
-    }
-    .token-budget-row:last-child { border-bottom: none; }
-    .token-budget-label {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      margin-bottom: 8px;
-    }
-    .token-budget-label strong { font-size: 13px; color: #1e293b; }
-    .token-budget-desc { font-size: 11px; color: #94a3b8; }
-    .token-budget-control {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .token-budget-control input[type="range"] {
-      flex: 1;
-      margin: 0;
-      border: none;
-      padding: 0;
-      box-shadow: none;
-    }
-    .token-budget-value {
+    .project-card-tags .tag {
       font-size: 11px;
-      color: #64748b;
-      min-width: 140px;
-      text-align: right;
-      white-space: nowrap;
+      padding: 3px 10px;
+      background: var(--ac-tag-bg);
+      color: var(--ac-tag-text);
+      border-radius: 12px;
+      font-weight: 500;
     }
 
-    /* System prompt editor */
-    .prompt-section {
-      border: 1px solid #f1f5f9;
-      border-radius: 8px;
-      margin-bottom: 8px;
+    /* ══════════════════════════════════════════════
+       CAREER GOALS (details/summary accordions)
+    ══════════════════════════════════════════════ */
+    details.accordion-card {
+      background: var(--ac-bg);
+      border: 1px solid var(--ac-border);
+      border-radius: var(--ac-radius-xl);
+      margin-bottom: 12px;
+      box-shadow: var(--ac-botanical-shadow);
       overflow: hidden;
     }
-    .prompt-section-header {
+
+    details.accordion-card > summary {
+      padding: 16px 20px;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--ac-text);
+      list-style: none;
       display: flex;
       align-items: center;
-      padding: 10px 14px;
-      cursor: pointer;
-      background: #f8fafc;
-      transition: background 0.15s;
-      gap: 8px;
+      gap: 10px;
+      user-select: none;
+      letter-spacing: -0.2px;
     }
-    .prompt-section-header:hover { background: #f1f5f9; }
-    .prompt-section-arrow {
+
+    details.accordion-card > summary::-webkit-details-marker { display: none; }
+
+    details.accordion-card > summary::before {
+      content: '\25B6';
       font-size: 10px;
-      color: #94a3b8;
+      color: var(--ac-text-muted);
       transition: transform 0.2s;
-      flex-shrink: 0;
     }
-    .prompt-section.open .prompt-section-arrow { transform: rotate(90deg); }
-    .prompt-section-name {
+
+    details.accordion-card[open] > summary::before {
+      transform: rotate(90deg);
+    }
+
+    details.accordion-card .accordion-body {
+      padding: 0 20px 20px;
+    }
+
+    /* Inline-editable fields */
+    .inline-editable {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 14px;
+    }
+
+    .inline-editable .ie-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--ac-text-muted);
+    }
+
+    .inline-editable .ie-display {
+      font-size: 14px;
+      color: var(--ac-text);
+      cursor: pointer;
+      padding: 6px 10px;
+      border-radius: var(--ac-radius-lg);
+      transition: background 0.15s;
+      min-height: 32px;
+    }
+
+    .inline-editable .ie-display:hover { background: var(--ac-input-bg); }
+
+    .inline-editable .ie-display:empty::after {
+      content: 'Click to edit...';
+      color: var(--ac-text-muted);
+      font-style: italic;
+    }
+
+    .inline-editable .ie-input {
+      display: none;
+      padding: 8px 10px;
+      border: none;
+      border-bottom: 2px solid var(--ac-primary-dark);
+      border-radius: var(--ac-radius-lg);
+      background: var(--ac-input-bg);
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--ac-text);
+    }
+
+    .inline-editable .ie-input:focus { outline: none; }
+
+    .inline-editable.editing .ie-display { display: none; }
+    .inline-editable.editing .ie-input { display: block; }
+
+    /* ══════════════════════════════════════════════
+       ROLE HIGHLIGHTS (2x2 grid)
+    ══════════════════════════════════════════════ */
+    .role-highlights-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    /* ══════════════════════════════════════════════
+       WORK PREFERENCES (4-col key-value)
+    ══════════════════════════════════════════════ */
+    .work-prefs-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      gap: 20px;
+    }
+
+    .work-pref-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .work-pref-item .wp-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--ac-text-muted);
+    }
+
+    .work-pref-item .wp-value {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ac-text);
+      cursor: pointer;
+      padding: 4px 0;
+      min-height: 24px;
+    }
+
+    .work-pref-item .wp-value:empty::after {
+      content: '--';
+      color: var(--ac-text-muted);
+      font-weight: 400;
+    }
+
+    .work-pref-item .wp-input {
+      display: none;
+      padding: 6px 8px;
+      border: none;
+      border-bottom: 2px solid var(--ac-primary-dark);
+      border-radius: var(--ac-radius-lg);
+      background: var(--ac-input-bg);
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      color: var(--ac-text);
+      margin-bottom: 0;
+    }
+
+    .work-pref-item .wp-input:focus { outline: none; }
+
+    .work-pref-item.editing .wp-value { display: none; }
+    .work-pref-item.editing .wp-input { display: block; }
+
+    /* ══════════════════════════════════════════════
+       EEO (collapsible)
+    ══════════════════════════════════════════════ */
+    .eeo-disclaimer {
+      font-size: 12px;
+      font-style: italic;
+      color: var(--ac-text-muted);
+      margin-bottom: 16px;
+      line-height: 1.6;
+    }
+
+    .eeo-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    /* ══════════════════════════════════════════════
+       ADDITIONAL CONTEXT (2 col textareas)
+    ══════════════════════════════════════════════ */
+    .context-textareas-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    .context-textarea {
+      width: 100%;
+      min-height: 200px;
+      padding: 14px;
+      border: none;
+      border-radius: var(--ac-radius-lg);
+      background: var(--ac-input-bg);
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--ac-text);
+      resize: vertical;
+    }
+
+    .context-textarea:focus {
+      outline: none;
+      border-bottom: 2px solid var(--ac-primary-dark);
+    }
+
+    /* ══════════════════════════════════════════════
+       MY JOBS — CARD BASED
+    ══════════════════════════════════════════════ */
+    .myjobs-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .myjobs-header h1 {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--ac-text);
+    }
+
+    .myjobs-count-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 12px;
+      background: var(--ac-tag-bg);
+      color: var(--ac-tag-text);
+      border-radius: 20px;
       font-size: 13px;
       font-weight: 600;
-      color: #1e293b;
-      flex: 1;
     }
-    .prompt-section-desc {
-      font-size: 11px;
-      color: #94a3b8;
-      display: none;
-    }
-    .prompt-section-badge {
-      font-size: 10px;
-      font-weight: 600;
-      color: #f59e0b;
-      background: #fef3c7;
-      padding: 2px 6px;
-      border-radius: 4px;
-      display: none;
-    }
-    .prompt-section-badge.visible { display: inline-block; }
-    .prompt-section-body {
-      display: none;
-      padding: 0 14px 14px;
-    }
-    .prompt-section.open .prompt-section-body { display: block; }
-    .prompt-section.open .prompt-section-desc { display: block; margin-bottom: 8px; }
-    .prompt-textarea {
-      width: 100%;
-      min-height: 120px;
-      max-height: 400px;
-      padding: 10px 12px;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-      font-size: 11px;
-      line-height: 1.5;
-      color: #1e293b;
-      resize: vertical;
-      background: #fff;
-    }
-    .prompt-textarea:focus { outline: none; border-color: var(--ac-primary); box-shadow: 0 0 0 2px var(--ac-shadow); }
-    .prompt-section-footer {
-      display: flex;
-      justify-content: flex-end;
-      margin-top: 6px;
-    }
-    .prompt-reset-btn {
-      background: none;
-      border: none;
-      font-size: 11px;
-      color: #94a3b8;
-      cursor: pointer;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-family: inherit;
-    }
-    .prompt-reset-btn:hover { color: #ef4444; background: #fef2f2; }
 
-    .toast {
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      padding: 12px 24px;
-      background: var(--ac-text, #1e293b);
-      color: white;
-      border-radius: 8px;
+    .myjobs-subtitle {
       font-size: 14px;
-      z-index: 9999;
-      opacity: 0;
-      transform: translateY(10px);
-      transition: all 0.3s;
+      color: var(--ac-text-muted);
+      margin-bottom: 24px;
     }
 
-    .toast.show { opacity: 1; transform: translateY(0); }
+    .myjobs-filters {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
 
-    .provider-hint {
-      font-size: 12px;
+    .myjobs-filter {
+      padding: 6px 16px;
+      border: none;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      background: var(--ac-surface-low);
       color: var(--ac-text-secondary);
-      margin: -8px 0 12px;
-      min-height: 16px;
+      font-family: inherit;
+      transition: background 0.15s, color 0.15s;
     }
 
-    /* Legacy Q&A filter styles removed — replaced by intake flow */
+    .myjobs-filter:hover { background: var(--ac-surface-mid); }
 
-    .badge-free {
-      display: inline-block;
-      padding: 1px 8px;
-      background: #d1fae5;
-      color: #059669;
-      border-radius: 4px;
+    .myjobs-filter.active {
+      background: var(--ac-primary);
+      color: #fff;
+    }
+
+    .myjobs-filter .filter-count {
+      font-size: 11px;
+      opacity: 0.7;
+      margin-left: 4px;
+    }
+
+    /* Job Card */
+    .job-card {
+      background: var(--ac-bg);
+      border: 1px solid var(--ac-border);
+      border-radius: var(--ac-radius-xl);
+      padding: 20px;
+      margin-bottom: 12px;
+      box-shadow: var(--ac-botanical-shadow);
+      transition: border-color 0.15s;
+    }
+
+    .job-card:hover { border-color: var(--ac-primary); }
+
+    .job-card-top {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .job-card-score {
+      flex-shrink: 0;
+      width: 64px; height: 64px;
+    }
+
+    .job-card-score svg { transform: rotate(-90deg); }
+
+    .job-card-info { flex: 1; min-width: 0; }
+
+    .job-card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--ac-text);
+      text-decoration: none;
+      letter-spacing: -0.2px;
+    }
+
+    .job-card-title:hover { color: var(--ac-primary); }
+
+    .job-card-company {
+      font-size: 13px;
+      color: var(--ac-text-secondary);
+    }
+
+    .job-card-date {
+      font-size: 12px;
+      color: var(--ac-text-muted);
+    }
+
+    .job-card-actions-btn {
+      padding: 6px 12px;
+      border-radius: var(--ac-radius-lg);
+      border: 1px solid var(--ac-border);
+      background: var(--ac-bg);
+      font-size: 12px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      color: var(--ac-text-secondary);
+      transition: all 0.15s;
+    }
+
+    .job-card-actions-btn:hover { border-color: var(--ac-primary); color: var(--ac-primary); }
+
+    .job-card-divider {
+      border: none;
+      border-top: 1px solid var(--ac-border);
+      margin: 14px 0;
+    }
+
+    .job-card-bottom {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .myjobs-status-select {
+      padding: 4px 10px;
+      border-radius: var(--ac-radius-lg);
+      border: 1px solid var(--ac-border);
       font-size: 11px;
       font-weight: 600;
-      margin-left: 6px;
-      vertical-align: middle;
+      font-family: inherit;
+      cursor: pointer;
+      background: var(--ac-card-bg);
     }
 
-    /* Applied jobs table */
+    .myjobs-status-select.status-saved { background: #edeeed; color: #434842; }
+    .myjobs-status-select.status-applied { background: #d1e8cf; color: #2d4a2a; }
+    .myjobs-status-select.status-interview { background: #d6e3ff; color: #1e3a5f; }
+    .myjobs-status-select.status-offer { background: #d1fae5; color: #065f46; }
+    .myjobs-status-select.status-rejected { background: #f5d5d5; color: #8b2525; }
+    .myjobs-status-select.status-withdrawn { background: #edeeed; color: #727971; }
+
+    .myjobs-jd-row td { padding: 0 !important; }
+
+    .myjobs-jd-content {
+      max-height: 200px;
+      overflow-y: auto;
+      padding: 12px 16px;
+      background: var(--ac-surface-low);
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--ac-text-secondary);
+      white-space: pre-wrap;
+      border-radius: var(--ac-radius-lg);
+      margin-top: 10px;
+    }
+
+    .score-badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 12px;
+      min-width: 36px;
+      text-align: center;
+    }
+
+    .score-badge-green { background: #d1fae5; color: #059669; }
+    .score-badge-amber { background: #fef3c7; color: #92400e; }
+    .score-badge-red { background: #fee2e2; color: #dc2626; }
+
+    .applied-empty {
+      text-align: center;
+      color: var(--ac-text-muted);
+      padding: 60px 20px;
+      font-size: 14px;
+    }
+
+    .applied-empty-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.4;
+    }
+
+    .applied-empty-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--ac-text);
+      margin-bottom: 6px;
+    }
+
+    .applied-count {
+      font-size: 13px;
+      color: var(--ac-text-secondary);
+      margin-bottom: 16px;
+    }
+
+    /* Legacy table compat (in case JS still renders tables) */
     .applied-table {
       width: 100%;
       border-collapse: collapse;
@@ -700,296 +1227,938 @@
       vertical-align: middle;
     }
 
-    .applied-table tr:hover td {
-      background: var(--ac-card-bg);
-    }
+    .applied-table tr:hover td { background: var(--ac-surface-low); }
+    .applied-table a { color: var(--ac-primary); text-decoration: none; }
+    .applied-table a:hover { text-decoration: underline; }
 
-    .applied-table a {
-      color: var(--ac-primary);
-      text-decoration: none;
-    }
-
-    .applied-table a:hover {
-      text-decoration: underline;
-    }
-
-    /* My Jobs filter pills */
-    .myjobs-filters {
+    /* ══════════════════════════════════════════════
+       FLOATING SAVE BAR
+    ══════════════════════════════════════════════ */
+    .floating-save-bar {
+      position: fixed;
+      bottom: 0;
+      left: var(--ac-sidebar-width);
+      right: 0;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-top: 1px solid var(--ac-border);
+      padding: 14px 40px;
       display: flex;
-      gap: 6px;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
-    }
-    .myjobs-filter {
-      padding: 5px 14px;
-      border: none;
-      border-radius: 8px;
-      font-size: 12px;
-      font-weight: 500;
-      cursor: pointer;
-      background: var(--ac-surface-low, #f3f4f3);
-      color: var(--ac-text-secondary);
-      font-family: inherit;
-      transition: background 0.15s, color 0.15s;
-    }
-    .myjobs-filter:hover { background: var(--ac-surface-mid, #edeeed); }
-    .myjobs-filter.active {
-      background: var(--ac-primary);
-      color: #fff;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 16px;
+      z-index: 80;
     }
 
-    /* Status select in table */
-    .myjobs-status-select {
-      padding: 3px 8px;
-      border-radius: 8px;
-      border: 1px solid var(--ac-border);
+    .floating-save-bar .autosave-text {
+      font-size: 12px;
+      color: var(--ac-text-muted);
+      margin-right: auto;
+    }
+
+    .floating-save-bar .btn { min-width: 140px; justify-content: center; }
+
+    /* ══════════════════════════════════════════════
+       SETTINGS — TOGGLES
+    ══════════════════════════════════════════════ */
+    .toggle-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--ac-border);
+    }
+
+    .toggle-row:last-child { border-bottom: none; }
+
+    .toggle-row input[type="checkbox"] {
+      accent-color: var(--ac-primary);
+      width: 16px;
+      height: 16px;
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+
+    .toggle-info { flex: 1; }
+
+    .toggle-info .toggle-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ac-text);
+      margin-bottom: 2px;
+    }
+
+    .toggle-info .toggle-desc {
+      font-size: 12px;
+      color: var(--ac-text-muted);
+    }
+
+    /* ══════════════════════════════════════════════
+       SETTINGS — AI Config
+    ══════════════════════════════════════════════ */
+    .settings-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .api-key-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    .api-key-row input { flex: 1; margin-bottom: 0; }
+
+    .slider-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .slider-container input[type="range"] {
+      flex: 1;
+      margin-bottom: 0;
+      border: none;
+      padding: 0;
+      box-shadow: none;
+      accent-color: var(--ac-primary);
+    }
+
+    .slider-value {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ac-primary);
+      min-width: 32px;
+    }
+
+    .test-result {
+      padding: 10px 16px;
+      border-radius: var(--ac-radius-lg);
+      font-size: 13px;
+      margin-top: 12px;
+      display: none;
+    }
+
+    .test-result.success { display: block; background: #d1fae5; color: #059669; }
+    .test-result.error { display: block; background: #fee2e2; color: #dc2626; }
+
+    .provider-hint {
+      font-size: 12px;
+      color: var(--ac-text-secondary);
+      margin: -8px 0 12px;
+      min-height: 16px;
+    }
+
+    .badge-free {
+      display: inline-block;
+      padding: 1px 8px;
+      background: #d1fae5;
+      color: #059669;
+      border-radius: 4px;
       font-size: 11px;
       font-weight: 600;
-      font-family: inherit;
-      cursor: pointer;
-      background: var(--ac-card-bg);
-    }
-    .myjobs-status-select.status-saved { background: #edeeed; color: #434842; }
-    .myjobs-status-select.status-applied { background: #d1e8cf; color: #2d4a2a; }
-    .myjobs-status-select.status-interview { background: #d6e3ff; color: #1e3a5f; }
-    .myjobs-status-select.status-offer { background: #d1fae5; color: #065f46; }
-    .myjobs-status-select.status-rejected { background: #f5d5d5; color: #8b2525; }
-    .myjobs-status-select.status-withdrawn { background: #edeeed; color: #727971; }
-
-    /* JD preview expand row */
-    .myjobs-jd-row td { padding: 0 !important; }
-    .myjobs-jd-content {
-      max-height: 200px;
-      overflow-y: auto;
-      padding: 12px 16px;
-      background: var(--ac-surface-low, #f3f4f3);
-      font-size: 12px;
-      line-height: 1.6;
-      color: var(--ac-text-secondary);
-      white-space: pre-wrap;
+      margin-left: 6px;
+      vertical-align: middle;
     }
 
-    .score-badge {
-      display: inline-block;
-      padding: 2px 10px;
-      border-radius: 12px;
-      font-weight: 600;
-      font-size: 12px;
-      min-width: 36px;
-      text-align: center;
+    /* ══════════════════════════════════════════════
+       TOKEN BUDGET SLIDERS
+    ══════════════════════════════════════════════ */
+    .token-budget-row {
+      padding: 12px 0;
+      border-bottom: 1px solid var(--ac-border);
     }
 
-    .score-badge-green { background: #d1fae5; color: #059669; }
-    .score-badge-amber { background: #fef3c7; color: #92400e; }
-    .score-badge-red { background: #fee2e2; color: #dc2626; }
+    .token-budget-row:last-child { border-bottom: none; }
 
-    .applied-empty {
-      text-align: center;
+    .token-budget-label {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin-bottom: 8px;
+    }
+
+    .token-budget-label strong { font-size: 13px; color: var(--ac-text); }
+    .token-budget-desc { font-size: 11px; color: var(--ac-text-muted); }
+
+    .token-budget-control {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .token-budget-control input[type="range"] {
+      flex: 1;
+      margin: 0;
+      border: none;
+      padding: 0;
+      box-shadow: none;
+      accent-color: var(--ac-primary);
+    }
+
+    .token-budget-value {
+      font-size: 11px;
       color: var(--ac-text-muted);
-      padding: 40px 20px;
-      font-size: 14px;
+      min-width: 140px;
+      text-align: right;
+      white-space: nowrap;
     }
 
-    .applied-count {
+    /* ══════════════════════════════════════════════
+       SYSTEM PROMPTS
+    ══════════════════════════════════════════════ */
+    .prompt-section {
+      border: 1px solid var(--ac-border);
+      border-radius: var(--ac-radius-lg);
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+
+    .prompt-section-header {
+      display: flex;
+      align-items: center;
+      padding: 10px 14px;
+      cursor: pointer;
+      background: var(--ac-surface-low);
+      transition: background 0.15s;
+      gap: 8px;
+    }
+
+    .prompt-section-header:hover { background: var(--ac-surface-mid); }
+
+    .prompt-section-arrow {
+      font-size: 10px;
+      color: var(--ac-text-muted);
+      transition: transform 0.2s;
+      flex-shrink: 0;
+    }
+
+    .prompt-section.open .prompt-section-arrow { transform: rotate(90deg); }
+
+    .prompt-section-name {
       font-size: 13px;
-      color: var(--ac-text-secondary);
+      font-weight: 600;
+      color: var(--ac-text);
+      flex: 1;
+    }
+
+    .prompt-section-desc {
+      font-size: 11px;
+      color: var(--ac-text-muted);
+      display: none;
+    }
+
+    .prompt-section-badge {
+      font-size: 10px;
+      font-weight: 600;
+      color: #f59e0b;
+      background: #fef3c7;
+      padding: 2px 6px;
+      border-radius: 4px;
+      display: none;
+    }
+
+    .prompt-section-badge.visible { display: inline-block; }
+
+    .prompt-section-body {
+      display: none;
+      padding: 0 14px 14px;
+    }
+
+    .prompt-section.open .prompt-section-body { display: block; }
+    .prompt-section.open .prompt-section-desc { display: block; margin-bottom: 8px; }
+
+    .prompt-textarea {
+      width: 100%;
+      min-height: 120px;
+      max-height: 400px;
+      padding: 10px 12px;
+      border: 1px solid var(--ac-border);
+      border-radius: 6px;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      color: var(--ac-text);
+      resize: vertical;
+      background: var(--ac-bg);
+    }
+
+    .prompt-textarea:focus {
+      outline: none;
+      border-color: var(--ac-primary);
+      box-shadow: 0 0 0 2px var(--ac-shadow);
+    }
+
+    .prompt-section-footer {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 6px;
+    }
+
+    .prompt-reset-btn {
+      background: none;
+      border: none;
+      font-size: 11px;
+      color: var(--ac-text-muted);
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-family: inherit;
+    }
+
+    .prompt-reset-btn:hover { color: #ef4444; background: #fef2f2; }
+
+    /* ══════════════════════════════════════════════
+       TOAST
+    ══════════════════════════════════════════════ */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 12px 24px;
+      background: var(--ac-text);
+      color: white;
+      border-radius: var(--ac-radius-lg);
+      font-size: 14px;
+      z-index: 9999;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.3s;
+    }
+
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    /* ══════════════════════════════════════════════
+       LEGACY COMPAT
+    ══════════════════════════════════════════════ */
+    .slot-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    .resume-slots {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
       margin-bottom: 16px;
     }
 
-    /* Profile slot switcher */
-    .slot-btns { display: flex; gap: 8px; flex-wrap: wrap; }
-    .profile-slot-btn { background: var(--ac-border); color: var(--ac-text-secondary); border: 2px solid transparent; }
-    .profile-slot-btn:hover { background: var(--ac-hover-bg); }
-    .profile-slot-btn.active { background: var(--ac-primary); color: white; border-color: var(--ac-primary-hover); }
-    .profile-slot-btn.has-data::after { content: ' ●'; font-size: 9px; opacity: 0.7; }
+    .profile-slot-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 20px 16px;
+      border-radius: var(--ac-radius-xl);
+      border: 2px solid var(--ac-border);
+      background: var(--ac-bg);
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--ac-text-secondary);
+    }
 
-    /* Stats dashboard */
-    .stats-grid {
+    .profile-slot-btn:hover { border-color: var(--ac-primary); background: var(--ac-hover-bg); }
+
+    .profile-slot-btn.active {
+      border-color: var(--ac-primary);
+      background: var(--ac-primary);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(79,97,77,0.25);
+    }
+
+    .profile-slot-btn.has-data::after {
+      content: ' \25CF';
+      font-size: 9px;
+      opacity: 0.7;
+    }
+
+    .slot-icon { font-size: 24px; line-height: 1; }
+
+    /* Intake flow (hidden compat) */
+    .intake-layout {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
-      margin-bottom: 24px;
+      grid-template-columns: 220px 1fr;
+      gap: 20px;
+      min-height: 500px;
     }
-    .stat-card {
-      text-align: center;
-      background: var(--ac-card-bg);
-      border-radius: 10px;
-      padding: 18px 12px;
+
+    .intake-sidebar { border-right: 1px solid var(--ac-border); padding-right: 16px; }
+    .intake-main { padding: 0 4px; }
+
+    .intake-progress-bar {
+      height: 6px;
+      background: var(--ac-border);
+      border-radius: 3px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+
+    .intake-progress-fill {
+      height: 100%;
+      background: var(--ac-primary);
+      border-radius: 3px;
+      transition: width 0.3s ease;
+    }
+
+    .intake-sidebar-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: var(--ac-radius-lg);
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--ac-text-secondary);
+      transition: all 0.15s;
+      margin-bottom: 4px;
+    }
+
+    .intake-sidebar-item:hover { background: var(--ac-hover-bg); }
+    .intake-sidebar-item.active { background: var(--ac-hover-bg); color: var(--ac-text); font-weight: 600; }
+    .intake-sidebar-item.complete { color: #059669; }
+
+    .intake-sidebar-icon {
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      border: 2px solid var(--ac-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+
+    .intake-sidebar-item.complete .intake-sidebar-icon { background: #d1fae5; border-color: #059669; color: #059669; }
+    .intake-sidebar-item.active .intake-sidebar-icon { border-color: var(--ac-primary); color: var(--ac-primary); }
+
+    .intake-section-title { font-size: 18px; font-weight: 700; color: var(--ac-text); margin-bottom: 4px; }
+    .intake-section-desc { font-size: 13px; color: var(--ac-text-secondary); margin-bottom: 24px; }
+    .intake-question-label { font-size: 14px; font-weight: 600; color: var(--ac-text); margin-bottom: 8px; }
+    .intake-question-hint { font-size: 12px; color: var(--ac-text-muted); margin-bottom: 8px; }
+    .intake-question-counter { font-size: 12px; color: var(--ac-text-muted); margin-bottom: 16px; }
+
+    .intake-answer-input {
+      width: 100%;
+      padding: 10px 12px;
       border: 1px solid var(--ac-border);
+      border-radius: var(--ac-radius-lg);
+      font-size: 14px;
+      font-family: inherit;
+      background: var(--ac-input-bg);
+      color: var(--ac-text);
+      transition: border-color 0.2s;
+      margin-bottom: 16px;
     }
-    .stat-card .stat-value { font-size: 34px; font-weight: 700; color: var(--ac-primary); line-height: 1; }
-    .stat-card .stat-label { font-size: 12px; color: var(--ac-text-secondary); margin-top: 5px; }
-    .stat-section-title {
-      font-size: 14px; font-weight: 600; color: var(--ac-text);
-      margin: 20px 0 10px; border-bottom: 1px solid var(--ac-border); padding-bottom: 6px;
+
+    .intake-answer-input:focus { outline: none; border-color: var(--ac-primary); box-shadow: 0 0 0 3px var(--ac-shadow); }
+    textarea.intake-answer-input { min-height: 80px; resize: vertical; }
+
+    .intake-nav {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      padding-top: 16px;
+      border-top: 1px solid var(--ac-border);
     }
-    .skill-freq-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-    .skill-freq-name { font-size: 13px; color: var(--ac-text); min-width: 130px; }
-    .skill-freq-track { flex: 1; height: 8px; background: var(--ac-border); border-radius: 4px; overflow: hidden; }
-    .skill-freq-fill { height: 100%; background: var(--ac-primary); border-radius: 4px; transition: width 0.4s ease; }
-    .skill-freq-count { font-size: 12px; color: var(--ac-text-muted); min-width: 28px; text-align: right; }
-    .score-dist { display: flex; gap: 8px; margin: 12px 0; }
-    .score-dist-bar {
-      flex: 1; text-align: center; border-radius: 8px;
-      padding: 10px 4px; font-size: 13px; font-weight: 700;
+
+    .intake-nav .btn { min-width: 90px; }
+    .intake-nav .spacer { flex: 1; }
+
+    .intake-review-section {
+      margin-bottom: 20px;
+      border: 1px solid var(--ac-border);
+      border-radius: var(--ac-radius-lg);
+      padding: 16px;
     }
-    .score-dist-bar small { display: block; font-size: 10px; font-weight: 400; opacity: 0.7; margin-top: 2px; }
+
+    .intake-review-section h3 {
+      font-size: 14px; font-weight: 600; margin-bottom: 12px;
+      color: var(--ac-text); cursor: pointer;
+    }
+
+    .intake-review-section h3:hover { color: var(--ac-primary); }
+
+    .intake-review-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 6px 0;
+      font-size: 13px;
+      border-bottom: 1px solid var(--ac-border);
+    }
+
+    .intake-review-item:last-child { border-bottom: none; }
+    .intake-review-q { color: var(--ac-text-secondary); flex: 0 0 40%; }
+    .intake-review-a { color: var(--ac-text); flex: 1; text-align: right; }
+    .intake-review-a.empty { color: var(--ac-text-muted); font-style: italic; }
+
+    .text-dump-entry {
+      border: 1px solid var(--ac-border);
+      border-radius: var(--ac-radius-lg);
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+
+    .text-dump-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .text-dump-header select { width: auto; margin-bottom: 0; padding: 4px 8px; font-size: 12px; }
+
+    .text-dump-char-count {
+      font-size: 11px;
+      color: var(--ac-text-muted);
+      text-align: right;
+      margin-top: 4px;
+    }
+
+    .collapsible-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      padding: 12px 0;
+      border: none;
+      background: none;
+      width: 100%;
+      text-align: left;
+      font-family: inherit;
+    }
+
+    .collapsible-toggle .arrow {
+      font-size: 10px;
+      color: var(--ac-text-muted);
+      transition: transform 0.2s;
+    }
+
+    .collapsible-toggle.open .arrow { transform: rotate(90deg); }
+    .collapsible-body { display: none; padding-bottom: 8px; }
+    .collapsible-body.open { display: block; }
   </style>
 </head>
 <body>
-  <div class="header">
-    <div>
-      <h1><span style="margin-right:6px;">&#9733;</span>Applicant Copilot</h1>
-      <div class="subtitle">Profile & Settings</div>
+
+  <!-- ═══════════════════════════════════════════════════
+       SIDEBAR
+  ═══════════════════════════════════════════════════ -->
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-brand-row">
+        <div class="sidebar-logo">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 3L21 20H3L12 3Z" fill="#a8c5a0" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <span class="sidebar-brand-text">Applicant Copilot</span>
+      </div>
+      <div class="sidebar-subtitle">Premium Access</div>
     </div>
-    <div style="display:flex;align-items:center;gap:10px;">
-      <!-- Auth state: signed out -->
-      <button id="authSignInBtn" class="btn btn-sm" style="background:#fff;color:#1e293b;border:1px solid #e2e8f0;font-size:12px;padding:5px 12px;display:none;align-items:center;gap:6px;cursor:pointer;" title="Sign in with Google">
-        <svg width="14" height="14" viewBox="0 0 48 48" style="flex-shrink:0;"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-        Sign in
+
+    <div class="sidebar-nav">
+      <div class="sidebar-nav-label">Menu</div>
+
+      <button class="sidebar-nav-item tab active" data-tab="profile">
+        <span class="sidebar-nav-icon">&#128100;</span>
+        User Context
       </button>
-      <!-- Auth state: signed in -->
-      <div id="authUserInfo" style="display:none;align-items:center;gap:8px;font-size:12px;color:#fff;">
-        <span id="authUserName"></span>
-        <button id="authSignOutBtn" class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff;border:none;font-size:11px;padding:4px 10px;cursor:pointer;" title="Sign out">Sign out</button>
-      </div>
-      <button class="jm-theme-btn-profile" id="profileThemeToggle" title="Switch theme">&#9728;&#65039;</button>
+
+      <button class="sidebar-nav-item tab" data-tab="applied">
+        <span class="sidebar-nav-icon">&#128188;</span>
+        My Jobs
+      </button>
+
+      <button class="sidebar-nav-item tab" data-tab="settings">
+        <span class="sidebar-nav-icon">&#9881;</span>
+        AI Settings
+      </button>
     </div>
-  </div>
 
-  <div class="tabs">
-    <div class="tab active" data-tab="profile">Profile</div>
-    <div class="tab" data-tab="qa">My Context</div>
-    <div class="tab" data-tab="applied">My Jobs</div>
-    <div class="tab" data-tab="stats">Stats</div>
-    <div class="tab" data-tab="settings">AI Settings</div>
-  </div>
-
-  <div class="container">
-    <!-- ─── Profile Tab ─────────────────────────────────── -->
-    <div class="tab-content active" id="tab-profile">
-
-      <!-- Profile slot switcher -->
-      <div class="card" style="margin-bottom:16px;">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-          <div>
-            <h2 style="margin-bottom:3px;">Active Resume Profile</h2>
-            <p style="font-size:12px;color:#64748b;margin:0;">Switch between up to 3 resume versions for different job types.</p>
-          </div>
-          <div class="slot-btns" id="profileSlotBtns">
-            <button class="btn btn-sm profile-slot-btn active" data-slot="0">Resume 1</button>
-            <button class="btn btn-sm profile-slot-btn" data-slot="1">Resume 2</button>
-            <button class="btn btn-sm profile-slot-btn" data-slot="2">Resume 3</button>
-          </div>
-        </div>
-        <div style="margin-top:12px;display:flex;gap:8px;align-items:center;">
-          <input type="text" id="slotNameInput" placeholder="Name this profile, e.g. Software Engineer…" style="margin-bottom:0;flex:1;">
-          <button class="btn btn-secondary btn-sm" id="saveSlotNameBtn">Rename</button>
-        </div>
+    <div class="sidebar-bottom">
+      <button id="authSignInBtn" class="sidebar-auth-signin" style="display:none;" title="Sign in with Google">
+        <svg width="14" height="14" viewBox="0 0 48 48" style="flex-shrink:0;"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Sign in with Google
+      </button>
+      <div id="authUserInfo" class="sidebar-user-info">
+        <span class="user-name" id="authUserName"></span>
+        <button id="authSignOutBtn" class="sidebar-signout-btn" title="Sign out">Sign out</button>
       </div>
+    </div>
+  </nav>
 
-      <div class="card">
-        <h2>Upload Resume</h2>
-        <div class="upload-zone" id="uploadZone">
-          <div class="icon">&#128196;</div>
-          <div class="text">Drag & drop your resume or click to browse</div>
-          <div class="hint">Supports PDF and DOCX</div>
+  <!-- ═══════════════════════════════════════════════════
+       TOP HEADER BAR
+  ═══════════════════════════════════════════════════ -->
+  <header class="top-header">
+    <span class="top-header-title">Applicant Copilot</span>
+    <div class="top-header-right">
+      <button class="top-header-icon-btn" id="profileThemeToggle" title="Switch theme">&#9881;</button>
+    </div>
+  </header>
+
+  <!-- ═══════════════════════════════════════════════════
+       MAIN CONTENT
+  ═══════════════════════════════════════════════════ -->
+  <main class="main-content">
+    <div class="container">
+
+      <!-- ═══════════════════════════════════════════════
+           TAB: USER CONTEXT
+      ═══════════════════════════════════════════════ -->
+      <div class="tab-content active" id="tab-profile">
+
+        <!-- Page Header -->
+        <div class="page-header">
+          <span class="page-eyebrow">Curating the Narrative</span>
+          <h1 class="page-title">User Context</h1>
+          <p class="page-subtitle">This is your editorial base. Define your professional legacy to allow the Copilot to draft precisely tailored applications.</p>
+        </div>
+
+        <!-- ── 1. Your Resumes ── -->
+        <h2 class="section-heading">Your Resumes</h2>
+        <p class="section-subheading">Upload up to 10 resume versions. The primary is used by default for all operations.</p>
+
+        <div class="resume-cards-container" id="resumeCardsContainer">
+          <!-- JS renders resume cards here -->
+          <!-- Example card structure:
+          <div class="resume-card active">
+            <span class="primary-badge">PRIMARY</span>
+            <span class="resume-card-icon">&#128196;</span>
+            <span class="resume-card-name">Software_Engineer.pdf</span>
+            <span class="resume-card-date">Apr 9, 2026</span>
+          </div>
+          -->
+          <div class="upload-zone" id="uploadZone">
+            <span class="upload-zone-icon">&#8682;</span>
+            <span class="upload-zone-text">Upload New</span>
+            <span class="upload-zone-hint">PDF or DOCX</span>
+          </div>
         </div>
         <input type="file" id="fileInput" accept=".pdf,.docx" style="display:none">
         <div class="upload-status" id="uploadStatus"></div>
-      </div>
 
-      <div class="card">
-        <h2>Personal Information</h2>
-        <div class="form-row">
-          <div><label>Full Name</label><input type="text" id="pName"></div>
-          <div><label>Email</label><input type="email" id="pEmail"></div>
+        <div class="slot-rename-row">
+          <input type="text" id="slotNameInput" placeholder="Rename this resume profile...">
+          <button class="btn btn-secondary btn-sm" id="saveSlotNameBtn">Rename</button>
         </div>
-        <div class="form-row">
-          <div><label>Phone</label><input type="tel" id="pPhone"></div>
-          <div><label>Location</label><input type="text" id="pLocation"></div>
+
+        <hr class="section-divider">
+
+        <!-- ── 2. Personal Information + Professional Summary ── -->
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:32px;margin-bottom:32px;">
+          <div>
+            <h2 class="section-heading">Personal Information</h2>
+            <div class="card">
+              <div class="form-row">
+                <div>
+                  <label class="field-label">Full Name</label>
+                  <input type="text" id="pName">
+                </div>
+                <div>
+                  <label class="field-label">Email Address</label>
+                  <input type="email" id="pEmail">
+                </div>
+              </div>
+              <div class="form-row">
+                <div>
+                  <label class="field-label">Phone Number</label>
+                  <input type="tel" id="pPhone">
+                </div>
+                <div>
+                  <label class="field-label">Location</label>
+                  <input type="text" id="pLocation">
+                </div>
+              </div>
+              <div class="form-row">
+                <div>
+                  <label class="field-label">LinkedIn</label>
+                  <input type="url" id="pLinkedin">
+                </div>
+                <div>
+                  <label class="field-label">Portfolio</label>
+                  <input type="url" id="pWebsite">
+                </div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h2 class="section-heading">Professional Summary</h2>
+            <textarea id="pSummary" rows="12" style="border-radius:var(--ac-radius-xl);padding:16px;font-size:13px;line-height:1.7;resize:none;height:calc(100% - 40px);"></textarea>
+          </div>
         </div>
-        <div class="form-row">
-          <div><label>LinkedIn</label><input type="url" id="pLinkedin"></div>
-          <div><label>Website</label><input type="url" id="pWebsite"></div>
+
+        <hr class="section-divider">
+
+        <!-- ── 3. Skills + Experience ── -->
+        <div style="display:grid;grid-template-columns:1fr 2fr;gap:32px;margin-bottom:32px;">
+          <div>
+            <h2 class="section-heading">Skills</h2>
+            <div class="card" style="min-height:280px;">
+              <div class="skills-container" id="skillsContainer"></div>
+              <div class="skill-input-row" style="margin-top:12px;">
+                <input type="text" id="skillInput" placeholder="Add skill..." style="font-size:13px;">
+                <button class="btn btn-secondary btn-sm" id="addSkillBtn" style="padding:6px 10px;font-size:16px;">+</button>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h2 class="section-heading">Experience</h2>
+            <div class="experience-timeline" id="experienceList">
+              <!-- JS renders experience entries here with class experience-entry -->
+            </div>
+            <button class="btn btn-secondary btn-sm" id="addExpBtn" style="margin-top:8px;">+ Add Experience</button>
+          </div>
         </div>
-        <label>Professional Summary</label>
-        <textarea id="pSummary" rows="3"></textarea>
-      </div>
 
-      <div class="card">
-        <h2>Skills</h2>
-        <div class="skills-container" id="skillsContainer"></div>
-        <div class="skill-input-row">
-          <input type="text" id="skillInput" placeholder="Add a skill and press Enter">
-          <button class="btn btn-secondary btn-sm" id="addSkillBtn">Add</button>
+        <hr class="section-divider">
+
+        <!-- ── 4. Education + Certifications ── -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:32px;">
+          <div>
+            <h2 class="section-heading">Education</h2>
+            <p class="section-subheading">Degrees and academic credentials.</p>
+            <div id="educationList">
+              <!-- JS renders education-entry cards here -->
+            </div>
+            <button class="btn btn-secondary btn-sm" id="addEduBtn">+ Add Education</button>
+          </div>
+          <div>
+            <h2 class="section-heading">Certifications</h2>
+            <p class="section-subheading">Professional certifications and licenses.</p>
+            <div class="skills-container" id="certsContainer">
+              <!-- JS renders cert-tag pills here -->
+            </div>
+            <div class="skill-input-row">
+              <input type="text" id="certInput" placeholder="Add a certification and press Enter">
+              <button class="btn btn-secondary btn-sm" id="addCertBtn">Add</button>
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div class="card">
-        <h2>Experience</h2>
-        <div id="experienceList"></div>
-        <button class="btn btn-secondary btn-sm" id="addExpBtn">+ Add Experience</button>
-      </div>
+        <hr class="section-divider">
 
-      <div class="card">
-        <h2>Education</h2>
-        <div id="educationList"></div>
-        <button class="btn btn-secondary btn-sm" id="addEduBtn">+ Add Education</button>
-      </div>
+        <!-- ── 5. Featured Projects ── -->
+        <h2 class="section-heading">Featured Projects</h2>
+        <p class="section-subheading">Personal, open-source, or notable projects to showcase.</p>
 
-      <div class="card">
-        <h2>Certifications</h2>
-        <div class="skills-container" id="certsContainer"></div>
-        <div class="skill-input-row">
-          <input type="text" id="certInput" placeholder="Add a certification and press Enter">
-          <button class="btn btn-secondary btn-sm" id="addCertBtn">Add</button>
+        <div class="projects-grid" id="projectsList">
+          <!-- JS renders project-card items here -->
         </div>
-      </div>
+        <button class="btn btn-secondary btn-sm" id="addProjBtn" style="margin-bottom:8px;">+ Add Project</button>
 
-      <div class="card">
-        <h2>Projects</h2>
-        <div id="projectsList"></div>
-        <button class="btn btn-secondary btn-sm" id="addProjBtn">+ Add Project</button>
-      </div>
+        <hr class="section-divider">
 
-      <div style="text-align: right; margin-bottom: 40px;">
-        <button class="btn btn-primary" id="saveProfileBtn">Save Profile</button>
-      </div>
-    </div>
+        <!-- ── 6. Career Goals ── -->
+        <h2 class="section-heading">Career Goals & Context</h2>
+        <p class="section-subheading">Define your aspirations so the Copilot can tailor every response to your direction.</p>
 
-    <!-- ─── Intake Flow Tab (replaces Q&A) ─────────────── -->
-    <div class="tab-content" id="tab-qa">
-      <div class="card">
-        <h2>Build Your Applicant Context</h2>
-        <p style="font-size:13px;color:var(--ac-text-secondary);margin-bottom:16px;">
-          Walk through these sections to build a rich profile. The better we know you, the better your autofill answers will be.
-        </p>
-        <div class="intake-progress-bar">
-          <div class="intake-progress-fill" id="intakeProgressFill" style="width:0%"></div>
+        <details class="accordion-card" open>
+          <summary>Target Roles & Ideal Setup</summary>
+          <div class="accordion-body">
+            <div class="inline-editable">
+              <span class="ie-label">Target Roles</span>
+              <span class="ie-display" data-intake-field="career-target_roles"></span>
+              <input class="ie-input" data-intake-field="career-target_roles" type="text" placeholder="e.g. Senior Product Manager, Staff Engineer...">
+            </div>
+            <div class="inline-editable">
+              <span class="ie-label">Ideal Industries</span>
+              <span class="ie-display" data-intake-field="career-ideal_industries"></span>
+              <input class="ie-input" data-intake-field="career-ideal_industries" type="text" placeholder="e.g. B2B SaaS, FinTech, HealthTech...">
+            </div>
+            <div class="inline-editable">
+              <span class="ie-label">The Pitch</span>
+              <span class="ie-display" data-intake-field="career-the_pitch"></span>
+              <input class="ie-input" data-intake-field="career-the_pitch" type="text" placeholder="Your 1-liner value prop...">
+            </div>
+          </div>
+        </details>
+
+        <details class="accordion-card">
+          <summary>Motivation & Stage</summary>
+          <div class="accordion-body">
+            <div class="inline-editable">
+              <span class="ie-label">What drives your next move?</span>
+              <span class="ie-display" data-intake-field="career-motivation"></span>
+              <textarea class="ie-input" data-intake-field="career-motivation" rows="4" placeholder="Describe what you're looking for and why..."></textarea>
+            </div>
+          </div>
+        </details>
+
+        <hr class="section-divider">
+
+        <!-- ── 7. Role Highlights ── -->
+        <h2 class="section-heading">Role Highlights</h2>
+        <p class="section-subheading">Key narrative points the Copilot weaves into your applications.</p>
+
+        <div class="role-highlights-grid">
+          <details class="accordion-card">
+            <summary>Recent Impact</summary>
+            <div class="accordion-body">
+              <div class="inline-editable">
+                <span class="ie-label">Describe your most recent role impact</span>
+                <span class="ie-display" data-intake-field="experience-recent_role"></span>
+                <textarea class="ie-input" data-intake-field="experience-recent_role" rows="3" placeholder="What did you ship, improve, or lead?"></textarea>
+              </div>
+            </div>
+          </details>
+
+          <details class="accordion-card">
+            <summary>Top Achievement</summary>
+            <div class="accordion-body">
+              <div class="inline-editable">
+                <span class="ie-label">Your proudest professional achievement</span>
+                <span class="ie-display" data-intake-field="experience-top_achievement"></span>
+                <textarea class="ie-input" data-intake-field="experience-top_achievement" rows="3" placeholder="Quantify if possible..."></textarea>
+              </div>
+            </div>
+          </details>
+
+          <details class="accordion-card">
+            <summary>Key Tools</summary>
+            <div class="accordion-body">
+              <div class="inline-editable">
+                <span class="ie-label">Tools, frameworks, and platforms you excel with</span>
+                <span class="ie-display" data-intake-field="experience-key_tools"></span>
+                <textarea class="ie-input" data-intake-field="experience-key_tools" rows="3" placeholder="e.g. React, Figma, dbt, Terraform..."></textarea>
+              </div>
+            </div>
+          </details>
+
+          <details class="accordion-card">
+            <summary>Leadership Style</summary>
+            <div class="accordion-body">
+              <div class="inline-editable">
+                <span class="ie-label">How you lead teams and projects</span>
+                <span class="ie-display" data-intake-field="experience-leadership_style"></span>
+                <textarea class="ie-input" data-intake-field="experience-leadership_style" rows="3" placeholder="Collaborative, data-driven, servant leadership..."></textarea>
+              </div>
+            </div>
+          </details>
         </div>
-        <div class="intake-layout">
-          <div class="intake-sidebar" id="intakeSidebar"></div>
-          <div class="intake-main" id="intakeMain"></div>
-        </div>
-      </div>
-    </div>
 
-    <!-- ─── Stats Tab ───────────────────────────────────── -->
-    <div class="tab-content" id="tab-stats">
-      <div class="card">
-        <h2>Job Search Stats</h2>
-        <div id="statsContent">
-          <p style="color:#94a3b8;text-align:center;padding:30px 0;">Click the Stats tab to load your stats.</p>
-        </div>
-      </div>
-    </div>
+        <hr class="section-divider">
 
-    <!-- ─── My Jobs Tab ─────────────────────────────── -->
-    <div class="tab-content" id="tab-applied">
-      <div class="card">
-        <h2>My Jobs</h2>
-        <div class="applied-count" id="appliedCount"></div>
+        <!-- ── 8. Work Preferences ── -->
+        <h2 class="section-heading">Work Preferences</h2>
+        <p class="section-subheading">Practical constraints for autofill and matching.</p>
+
+        <div class="card">
+          <div class="work-prefs-grid">
+            <div class="work-pref-item">
+              <span class="wp-label">Min Salary</span>
+              <span class="wp-value" data-intake-field="work-desired_salary"></span>
+              <input class="wp-input" data-intake-field="work-desired_salary" type="text" placeholder="$120,000">
+            </div>
+            <div class="work-pref-item">
+              <span class="wp-label">Arrangement</span>
+              <span class="wp-value" data-intake-field="work-remote_preference"></span>
+              <input class="wp-input" data-intake-field="work-remote_preference" type="text" placeholder="Remote / Hybrid / On-site">
+            </div>
+            <div class="work-pref-item">
+              <span class="wp-label">Visa Sponsorship</span>
+              <span class="wp-value" data-intake-field="work-visa_sponsorship"></span>
+              <input class="wp-input" data-intake-field="work-visa_sponsorship" type="text" placeholder="Yes / No / N/A">
+            </div>
+            <div class="work-pref-item">
+              <span class="wp-label">Notice Period</span>
+              <span class="wp-value" data-intake-field="work-notice_period"></span>
+              <input class="wp-input" data-intake-field="work-notice_period" type="text" placeholder="2 weeks">
+            </div>
+            <div class="work-pref-item">
+              <span class="wp-label">Type</span>
+              <span class="wp-value" data-intake-field="work-employment_type"></span>
+              <input class="wp-input" data-intake-field="work-employment_type" type="text" placeholder="Full-time">
+            </div>
+            <div class="work-pref-item">
+              <span class="wp-label">Relocation</span>
+              <span class="wp-value" data-intake-field="work-relocation"></span>
+              <input class="wp-input" data-intake-field="work-relocation" type="text" placeholder="Open / No">
+            </div>
+            <div class="work-pref-item">
+              <span class="wp-label">Security Clear.</span>
+              <span class="wp-value" data-intake-field="work-security_clearance"></span>
+              <input class="wp-input" data-intake-field="work-security_clearance" type="text" placeholder="None / Secret / TS">
+            </div>
+            <div class="work-pref-item">
+              <span class="wp-label">Travel</span>
+              <span class="wp-value" data-intake-field="work-travel_willingness"></span>
+              <input class="wp-input" data-intake-field="work-travel_willingness" type="text" placeholder="Up to 25%">
+            </div>
+          </div>
+        </div>
+
+        <hr class="section-divider">
+
+        <!-- ── 9. EEO Compliance & Demographics ── -->
+        <details class="accordion-card">
+          <summary>&#128737; EEO Compliance & Demographics</summary>
+          <div class="accordion-body">
+            <p class="eeo-disclaimer">This information is used solely for autofilling voluntary self-identification forms required by many employers. It is never sent to AI models or shared with third parties. You can leave any field blank.</p>
+            <div class="eeo-grid">
+              <div class="inline-editable">
+                <span class="ie-label">Gender</span>
+                <span class="ie-display" data-intake-field="personal-gender"></span>
+                <input class="ie-input" data-intake-field="personal-gender" type="text" placeholder="Prefer not to say">
+              </div>
+              <div class="inline-editable">
+                <span class="ie-label">Ethnicity</span>
+                <span class="ie-display" data-intake-field="personal-ethnicity"></span>
+                <input class="ie-input" data-intake-field="personal-ethnicity" type="text" placeholder="Prefer not to say">
+              </div>
+              <div class="inline-editable">
+                <span class="ie-label">Veteran Status</span>
+                <span class="ie-display" data-intake-field="personal-veteran_status"></span>
+                <input class="ie-input" data-intake-field="personal-veteran_status" type="text" placeholder="Not a veteran">
+              </div>
+              <div class="inline-editable">
+                <span class="ie-label">Disability Status</span>
+                <span class="ie-display" data-intake-field="personal-disability_status"></span>
+                <input class="ie-input" data-intake-field="personal-disability_status" type="text" placeholder="Prefer not to say">
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <hr class="section-divider">
+
+        <!-- ── 10. Additional Context ── -->
+        <h2 class="section-heading">Additional Context</h2>
+        <p class="section-subheading">Raw text for the AI to draw from. Paste freely.</p>
+
+        <div class="context-textareas-grid">
+          <div>
+            <label class="field-label">Raw Work Context</label>
+            <textarea class="context-textarea" data-dump-idx="0" placeholder="Paste your raw resume text, career notes, accomplishments..."></textarea>
+          </div>
+          <div>
+            <label class="field-label">Master Cover Letter Draft</label>
+            <textarea class="context-textarea" data-dump-idx="1" placeholder="Paste your master cover letter template..."></textarea>
+          </div>
+        </div>
+
+      </div><!-- /tab-profile -->
+
+      <!-- ═══════════ Hidden Intake Tab (JS compat) ═══════════ -->
+      <div class="tab-content" id="tab-qa" style="display:none !important;"></div>
+
+      <!-- ═══════════════════════════════════════════════
+           TAB: MY JOBS
+      ═══════════════════════════════════════════════ -->
+      <div class="tab-content" id="tab-applied">
+
+        <div class="page-header">
+          <div class="myjobs-header">
+            <h1>My Jobs</h1>
+            <span class="myjobs-count-badge" id="appliedCount">0</span>
+          </div>
+          <p class="myjobs-subtitle">Track your applications through the hiring lifecycle.</p>
+        </div>
+
         <div class="myjobs-filters" id="myJobsFilters">
           <button class="myjobs-filter active" data-filter="all">All</button>
           <button class="myjobs-filter" data-filter="saved">Saved</button>
@@ -997,147 +2166,184 @@
           <button class="myjobs-filter" data-filter="interview">Interview</button>
           <button class="myjobs-filter" data-filter="offer">Offer</button>
           <button class="myjobs-filter" data-filter="rejected">Rejected</button>
+          <button class="myjobs-filter" data-filter="withdrawn">Withdrawn</button>
         </div>
-        <div id="appliedJobsList"></div>
-      </div>
-    </div>
 
-    <!-- ─── Settings Tab ────────────────────────────────── -->
-    <div class="tab-content" id="tab-settings">
-      <!-- Backend status banner (shown when signed in) -->
-      <div id="backendStatusBanner" style="display:none;background:linear-gradient(135deg,#059669,#10b981);color:#fff;padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:13px;">
-        <strong>Backend connected</strong> — AI calls go through Applicant Copilot servers. No API key needed.
-        <div style="margin-top:4px;opacity:0.85;font-size:11px;">Powered by Gemini Flash (free tier). Usage logged for analytics.</div>
-      </div>
-      <div class="card" style="margin-bottom:12px;">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;">
-          <input type="checkbox" id="sUseBackend" checked style="accent-color:var(--ac-primary);width:16px;height:16px;">
-          <span style="font-weight:600;">Use Backend AI</span>
-          <span style="font-size:11px;color:var(--ac-text-muted);font-weight:400;">— routes AI calls through Supabase Edge Function (OpenRouter/Groq/Gemini)</span>
-        </label>
-        <div style="font-size:11px;color:var(--ac-text-muted);margin-top:6px;padding-left:24px;">
-          When off, all AI calls use your local provider &amp; API key below. No backend needed.
-        </div>
-      </div>
-
-      <div class="card" style="margin-bottom:12px;">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;">
-          <input type="checkbox" id="sDataConsent" style="accent-color:var(--ac-primary);width:16px;height:16px;">
-          <span style="font-weight:600;">Data Sharing</span>
-          <span style="font-size:11px;color:var(--ac-text-muted);font-weight:400;">— share anonymous usage data to help improve the product</span>
-        </label>
-        <div style="font-size:11px;color:var(--ac-text-muted);margin-top:6px;padding-left:24px;">
-          Shares job market trends and your activity score (no personal info or resumes). You can turn this off anytime.
-        </div>
-      </div>
-
-      <div class="card">
-        <h2>AI Configuration</h2>
-
-        <label>Provider</label>
-        <select id="sProvider">
-          <option value="anthropic">Anthropic (Claude)</option>
-        </select>
-        <div class="provider-hint" id="providerHint"></div>
-
-        <label>API Key</label>
-        <div class="api-key-row">
-          <input type="password" id="sApiKey" placeholder="sk-ant-...">
-          <button class="btn btn-secondary btn-sm" id="toggleKeyBtn">Show</button>
-        </div>
-        <div style="height:12px"></div>
-
-        <div class="settings-row">
-          <div>
-            <label>Model</label>
-            <select id="sModel">
-              <option value="">Loading models...</option>
-            </select>
+        <div id="appliedJobsList">
+          <!-- JS renders job cards here. Empty state below shown when empty -->
+          <div class="applied-empty" id="appliedEmptyState">
+            <div class="applied-empty-icon">&#128188;</div>
+            <div class="applied-empty-title">No jobs tracked yet</div>
+            <p>Open any job listing and click "Save Job" in the Copilot panel to start tracking your pipeline.</p>
           </div>
-          <div>
-            <label>Temperature: <span id="tempValue">0.3</span></label>
-            <div class="slider-container">
-              <input type="range" id="sTemp" min="0" max="1" step="0.1" value="0.3">
+        </div>
+
+      </div><!-- /tab-applied -->
+
+      <!-- ═══════════════════════════════════════════════
+           TAB: AI SETTINGS
+      ═══════════════════════════════════════════════ -->
+      <div class="tab-content" id="tab-settings">
+
+        <div class="page-header">
+          <h1 class="page-title">AI Settings</h1>
+          <p class="page-subtitle">Configure your AI provider, token budgets, and system prompts.</p>
+        </div>
+
+        <!-- Backend status banner -->
+        <div id="backendStatusBanner" style="display:none;background:var(--ac-primary-gradient);color:#fff;padding:14px 20px;border-radius:var(--ac-radius-xl);margin-bottom:20px;font-size:13px;">
+          <strong>Backend connected</strong> -- AI calls go through Applicant Copilot servers. No API key needed.
+          <div style="margin-top:4px;opacity:0.85;font-size:11px;">Powered by Gemini Flash (free tier). Usage logged for analytics.</div>
+        </div>
+
+        <!-- Preferences Card -->
+        <div class="card">
+          <h2 style="margin-bottom:8px;">Preferences</h2>
+          <div class="toggle-row">
+            <input type="checkbox" id="sUseBackend" checked>
+            <div class="toggle-info">
+              <div class="toggle-title">Use Backend AI</div>
+              <div class="toggle-desc">Routes AI calls through Supabase Edge Function (OpenRouter/Groq/Gemini). When off, all AI calls use your local provider &amp; API key below.</div>
+            </div>
+          </div>
+          <div class="toggle-row">
+            <input type="checkbox" id="sDataConsent">
+            <div class="toggle-info">
+              <div class="toggle-title">Data Sharing</div>
+              <div class="toggle-desc">Share anonymous usage data to help improve the product. No personal info or resumes. You can turn this off anytime.</div>
+            </div>
+          </div>
+          <div class="toggle-row">
+            <input type="checkbox" id="sAutoScanEnabled" checked>
+            <div class="toggle-info">
+              <div class="toggle-title">Auto-Scan</div>
+              <div class="toggle-desc">Automatically show a keyword match score when browsing job listings. No AI calls -- uses local keyword matching against your profile.</div>
             </div>
           </div>
         </div>
 
-        <button class="btn btn-primary" id="testConnBtn">Test Connection</button>
-        <button class="btn btn-secondary" id="saveSettingsBtn" style="margin-left:8px;">Save Settings</button>
-        <div class="test-result" id="testResult" style="white-space:pre-wrap;max-height:300px;overflow-y:auto"></div>
-      </div>
+        <!-- AI Configuration -->
+        <div class="card">
+          <h2>AI Configuration</h2>
 
-      <div class="card" style="margin-top:16px;">
-        <h2>Response Length</h2>
-        <p style="font-size:12px;color:#64748b;margin-bottom:16px;">Control how much the AI generates per operation. Higher = more detailed but uses more tokens.</p>
+          <label class="field-label">Provider</label>
+          <select id="sProvider">
+            <option value="anthropic">Anthropic (Claude)</option>
+          </select>
+          <div class="provider-hint" id="providerHint"></div>
 
-        <div class="token-budget-row">
-          <div class="token-budget-label">
-            <strong>Resume Generation</strong>
-            <span class="token-budget-desc">Your most important document — keep this high</span>
+          <label class="field-label">API Key</label>
+          <div class="api-key-row">
+            <input type="password" id="sApiKey" placeholder="sk-ant-...">
+            <button class="btn btn-secondary btn-sm" id="toggleKeyBtn">Show</button>
           </div>
-          <div class="token-budget-control">
-            <input type="range" id="sBudgetResume" min="2048" max="16384" step="1024" value="8192">
-            <span class="token-budget-value" id="sBudgetResumeVal">8192 tokens (~6000 words)</span>
+          <div style="height:12px"></div>
+
+          <div class="settings-row">
+            <div>
+              <label class="field-label">Model</label>
+              <select id="sModel">
+                <option value="">Loading models...</option>
+              </select>
+            </div>
+            <div>
+              <label class="field-label">Temperature: <span id="tempValue">0.3</span></label>
+              <div class="slider-container">
+                <input type="range" id="sTemp" min="0" max="1" step="0.1" value="0.3">
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button class="btn btn-primary" id="testConnBtn">Test Connection</button>
+            <button class="btn btn-secondary" id="saveSettingsBtn">Save Settings</button>
+          </div>
+          <div class="test-result" id="testResult" style="white-space:pre-wrap;max-height:300px;overflow-y:auto"></div>
+        </div>
+
+        <!-- Response Length -->
+        <div class="card">
+          <h2>Response Length</h2>
+          <p style="font-size:12px;color:var(--ac-text-muted);margin-bottom:16px;">Control how much the AI generates per operation. Higher = more detailed but uses more tokens.</p>
+
+          <div class="token-budget-row">
+            <div class="token-budget-label">
+              <strong>Resume Generation</strong>
+              <span class="token-budget-desc">Your most important document -- keep this high</span>
+            </div>
+            <div class="token-budget-control">
+              <input type="range" id="sBudgetResume" min="2048" max="16384" step="1024" value="8192">
+              <span class="token-budget-value" id="sBudgetResumeVal">8192 tokens (~6000 words)</span>
+            </div>
+          </div>
+
+          <div class="token-budget-row">
+            <div class="token-budget-label">
+              <strong>Job Analysis</strong>
+              <span class="token-budget-desc">Match score, skills, recommendations</span>
+            </div>
+            <div class="token-budget-control">
+              <input type="range" id="sBudgetAnalysis" min="1024" max="8192" step="512" value="4096">
+              <span class="token-budget-value" id="sBudgetAnalysisVal">4096 tokens (~3000 words)</span>
+            </div>
+          </div>
+
+          <div class="token-budget-row">
+            <div class="token-budget-label">
+              <strong>Cover Letter</strong>
+              <span class="token-budget-desc">4-paragraph tailored letter</span>
+            </div>
+            <div class="token-budget-control">
+              <input type="range" id="sBudgetCoverLetter" min="512" max="4096" step="256" value="2048">
+              <span class="token-budget-value" id="sBudgetCoverLetterVal">2048 tokens (~1500 words)</span>
+            </div>
+          </div>
+
+          <div class="token-budget-row">
+            <div class="token-budget-label">
+              <strong>Ask AI Chat</strong>
+              <span class="token-budget-desc">Per-message response length</span>
+            </div>
+            <div class="token-budget-control">
+              <input type="range" id="sBudgetChat" min="256" max="2048" step="128" value="1024">
+              <span class="token-budget-value" id="sBudgetChatVal">1024 tokens (~750 words)</span>
+            </div>
           </div>
         </div>
 
-        <div class="token-budget-row">
-          <div class="token-budget-label">
-            <strong>Job Analysis</strong>
-            <span class="token-budget-desc">Match score, skills, recommendations</span>
+        <!-- System Prompts -->
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <h2 style="margin:0;">System Prompts</h2>
+            <button class="btn btn-secondary btn-sm" id="resetAllPromptsBtn" style="font-size:11px;">Reset All</button>
           </div>
-          <div class="token-budget-control">
-            <input type="range" id="sBudgetAnalysis" min="1024" max="8192" step="512" value="4096">
-            <span class="token-budget-value" id="sBudgetAnalysisVal">4096 tokens (~3000 words)</span>
-          </div>
+          <p style="font-size:12px;color:var(--ac-text-muted);margin-bottom:12px;">Customize the AI instructions for each operation. Edit, save, and test. Reset to defaults anytime.</p>
+          <div id="promptSections"></div>
         </div>
 
-        <div class="token-budget-row">
-          <div class="token-budget-label">
-            <strong>Cover Letter</strong>
-            <span class="token-budget-desc">4-paragraph tailored letter</span>
-          </div>
-          <div class="token-budget-control">
-            <input type="range" id="sBudgetCoverLetter" min="512" max="4096" step="256" value="2048">
-            <span class="token-budget-value" id="sBudgetCoverLetterVal">2048 tokens (~1500 words)</span>
-          </div>
-        </div>
+      </div><!-- /tab-settings -->
 
-        <div class="token-budget-row">
-          <div class="token-budget-label">
-            <strong>Ask AI Chat</strong>
-            <span class="token-budget-desc">Per-message response length</span>
-          </div>
-          <div class="token-budget-control">
-            <input type="range" id="sBudgetChat" min="256" max="2048" step="128" value="1024">
-            <span class="token-budget-value" id="sBudgetChatVal">1024 tokens (~750 words)</span>
-          </div>
-        </div>
-      </div>
+    </div><!-- /container -->
 
-      <div class="card" style="margin-top:16px;">
-        <h2>Auto-Scan</h2>
-        <p style="font-size:12px;color:#64748b;margin-bottom:12px;">Automatically show a keyword match score when browsing job listings. No AI calls — uses local keyword matching against your profile.</p>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-          <input type="checkbox" id="sAutoScanEnabled" checked>
-          <span style="font-size:13px;color:#1e293b;">Show quick keyword match score on job pages</span>
-        </label>
-      </div>
-
-      <div class="card" style="margin-top:16px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-          <h2 style="margin:0;">System Prompts</h2>
-          <button class="btn btn-secondary btn-sm" id="resetAllPromptsBtn" style="font-size:11px;">Reset All</button>
-        </div>
-        <p style="font-size:12px;color:#64748b;margin-bottom:12px;">Customize the AI instructions for each operation. Edit, save, and test. Reset to defaults anytime.</p>
-        <div id="promptSections"></div>
-      </div>
+    <!-- ═══════════ Floating Save Bar ═══════════ -->
+    <div class="floating-save-bar" id="floatingSaveBar">
+      <span class="autosave-text">Last auto-saved a few moments ago</span>
+      <button class="btn btn-primary" id="saveProfileBtn" style="background:var(--ac-primary-gradient);">
+        &#128190; Save Profile
+      </button>
     </div>
-  </div>
 
+  </main>
+
+  <!-- Hidden elements for JS compat -->
+  <div id="intakeSidebar" style="display:none !important;"></div>
+  <div id="intakeMain" style="display:none !important;"></div>
+  <div id="intakeProgressFill" style="display:none !important;"></div>
+
+  <!-- Toast -->
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+  <!-- Scripts -->
   <script src="libs/pdf.min.js"></script>
   <script src="libs/mammoth.browser.min.js"></script>
   <script src="profile.js"></script>

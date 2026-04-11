@@ -170,7 +170,6 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
     // Refresh data-heavy tabs every time they become visible
     if (tab.dataset.tab === 'applied') loadAppliedJobs();
-    if (tab.dataset.tab === 'stats') renderStats();
   });
 });
 
@@ -247,6 +246,26 @@ async function handleFile(file) {
     showResumeLoaded(file.name);
     setUploadStatus('Resume parsed successfully! Review and edit below.', 'success');
     markProfileDirty();
+
+    // Add to resumes array (new card system, max 10)
+    const stored = await chrome.storage.local.get('resumes');
+    const resumes = stored.resumes || [];
+    const isFirst = resumes.length === 0;
+    if (resumes.length >= 10) {
+      // Remove the oldest non-primary resume
+      const removeIdx = resumes.findIndex(r => !r.isPrimary);
+      if (removeIdx >= 0) resumes.splice(removeIdx, 1);
+    }
+    resumes.push({
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      fileName: file.name,
+      text: rawText.substring(0, 50000), // cap stored text
+      uploadDate: new Date().toISOString(),
+      isPrimary: isFirst
+    });
+    await chrome.storage.local.set({ resumes });
+    renderResumeCards();
+
     // Also prefill intake context from the newly parsed resume
     prefillFromProfile(profileData);
     renderIntakeFlow();
@@ -906,6 +925,11 @@ function renderIntakeSidebar() {
  * Main render dispatcher — calls the appropriate renderer based on view mode.
  */
 function renderIntakeFlow() {
+  // Guard: skip rendering if intake containers are hidden or absent (Stitch redesign)
+  const sidebar = document.getElementById('intakeSidebar');
+  const main = document.getElementById('intakeMain');
+  if (!sidebar || !main || sidebar.offsetParent === null) return;
+
   renderIntakeSidebar();
   if (intakeViewMode === 'review') {
     renderIntakeReview();
@@ -1362,11 +1386,7 @@ async function saveCustomPrompts() {
 }
 
 /** Simple HTML escaper for populating textareas safely. */
-function escapeHTML(str) {
-  const el = document.createElement('div');
-  el.textContent = str;
-  return el.innerHTML;
-}
+// escapeHTML defined once below (line ~1851) — removed duplicate here
 
 // Reset All Prompts button
 document.getElementById('resetAllPromptsBtn')?.addEventListener('click', async () => {
@@ -1802,6 +1822,12 @@ async function init() {
     loadAppliedJobs();
     // Load multi-slot state (activeSlot, profileSlots, slotNames) from local storage
     await loadProfileSlots();
+
+    // Stitch redesign: inline editing, resume cards, text dump textareas
+    initInlineEditing();
+    loadInlineEditValues();
+    renderResumeCards();
+    wireTextDumpTextareas();
   } catch (err) {
     console.error('[init] Error during initialization:', err);
   }
@@ -1832,7 +1858,7 @@ function escapeHTML(str) {
  * @returns {string} Attribute-safe string.
  */
 function escapeAttr(str) {
-  return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(str || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // ─── Applied jobs tracker ─────────────────────────────────────────────────────
@@ -1854,7 +1880,10 @@ async function loadAppliedJobs() {
   }
 }
 
+let _filtersWired = false;
 function wireJobFilters() {
+  if (_filtersWired) return;
+  _filtersWired = true;
   const container = document.getElementById('myJobsFilters');
   if (!container) return;
   container.querySelectorAll('.myjobs-filter').forEach(btn => {
@@ -1877,80 +1906,89 @@ function wireJobFilters() {
  * status dropdowns, JD preview, and delete actions.
  * @param {Array<Object>} jobs
  */
+/**
+ * Builds an SVG score ring for a job card.
+ * @param {number} score - 0-100 match score
+ * @param {number} size - SVG size in px (default 64)
+ * @returns {string} SVG markup
+ */
+function buildScoreRingSVG(score, size = 64) {
+  const radius = (size - 8) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const pct = Math.max(0, Math.min(100, score || 0));
+  const offset = circumference - (pct / 100) * circumference;
+  const color = pct >= 70 ? '#22c55e' : pct >= 45 ? '#f59e0b' : '#ef4444';
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex-shrink:0;">
+    <circle cx="${size/2}" cy="${size/2}" r="${radius}" fill="none" stroke="#e2e8f0" stroke-width="4"/>
+    <circle cx="${size/2}" cy="${size/2}" r="${radius}" fill="none" stroke="${color}" stroke-width="4"
+      stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"
+      stroke-linecap="round" transform="rotate(-90 ${size/2} ${size/2})"/>
+    <text x="50%" y="50%" text-anchor="middle" dominant-baseline="central"
+      font-size="14" font-weight="700" fill="${color}">${pct}</text>
+  </svg>`;
+}
+
+/**
+ * Renders the My Jobs tracker as card-based layout (Stitch redesign).
+ * Each card has: score ring, title/company/date, JD toggle, status dropdown,
+ * prep button, delete button.
+ * @param {Array<Object>} jobs
+ */
 function renderAppliedJobs(jobs) {
   const container = document.getElementById('appliedJobsList');
   const countEl   = document.getElementById('appliedCount');
 
   if (!jobs.length) {
     container.innerHTML = '<div class="applied-empty">No jobs tracked yet. Use the side panel on a job posting to save or apply to jobs.</div>';
-    countEl.textContent = '';
+    if (countEl) countEl.textContent = '';
     return;
   }
 
   const applied = jobs.filter(j => j.status && j.status !== 'saved').length;
-  countEl.textContent = jobs.length + ' job' + (jobs.length === 1 ? '' : 's') + (applied > 0 ? ` (${applied} applied)` : '');
+  if (countEl) countEl.textContent = jobs.length + ' job' + (jobs.length === 1 ? '' : 's') + (applied > 0 ? ` (${applied} applied)` : '');
 
   const statusOptions = ['saved', 'applied', 'interview', 'offer', 'rejected', 'withdrawn'];
   const statusLabels = { saved: 'Saved', applied: 'Applied', interview: 'Interview', offer: 'Offer', rejected: 'Rejected', withdrawn: 'Withdrawn' };
+  const statusColors = { saved: '#94a3b8', applied: '#3b82f6', interview: '#8b5cf6', offer: '#22c55e', rejected: '#ef4444', withdrawn: '#6b7280' };
 
-  let html = `<table class="applied-table">
-    <thead>
-      <tr>
-        <th>Score</th>
-        <th>Title</th>
-        <th>Company</th>
-        <th>Status</th>
-        <th>Date</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>`;
+  let html = '<div class="myjobs-cards">';
 
   for (const job of jobs) {
-    const scoreClass = job.score >= 70 ? 'green' : job.score >= 45 ? 'amber' : 'red';
-    const title    = escapeHTML(job.title    || 'Unknown');
-    const company  = escapeHTML(job.company  || '');
-    const date     = escapeHTML(job.statusDate || job.date || '');
-    const url      = escapeAttr(job.url      || '#');
-    const status   = job.status || 'saved';
-    const hasJD    = !!(job.jdText && job.jdText.length > 50);
+    const title   = escapeHTML(job.title   || 'Unknown');
+    const company = escapeHTML(job.company || '');
+    const date    = escapeHTML(job.statusDate || job.date || '');
+    const url     = escapeAttr(job.url     || '#');
+    const status  = job.status || 'saved';
+    const hasJD   = !!(job.jdText && job.jdText.length > 50);
+    const sColor  = statusColors[status] || '#94a3b8';
 
     // Status dropdown
-    let statusSelect = `<select class="myjobs-status-select status-${status}" data-id="${escapeAttr(job.id)}">`;
+    let statusSelect = `<select class="myjobs-status-select" style="border-color:${sColor};color:${sColor};" data-id="${escapeAttr(job.id)}">`;
     for (const s of statusOptions) {
       statusSelect += `<option value="${s}" ${s === status ? 'selected' : ''}>${statusLabels[s]}</option>`;
     }
     statusSelect += '</select>';
-    if (job.source === 'auto-detected') {
-      statusSelect += ' <span style="font-size:10px;color:var(--ac-text-muted);">Auto</span>';
-    }
 
-    html += `<tr data-job-id="${escapeAttr(job.id)}">
-      <td><span class="score-badge score-badge-${scoreClass}">${job.score || 0}</span></td>
-      <td>
-        <a href="${url}" target="_blank" rel="noopener">${title}</a>
-        ${hasJD ? `<button class="btn btn-sm myjobs-jd-toggle" data-id="${escapeAttr(job.id)}" style="margin-left:6px;font-size:10px;padding:1px 6px;">View JD</button>` : ''}
-      </td>
-      <td>${company}</td>
-      <td>${statusSelect}</td>
-      <td>${date}</td>
-      <td>
-        <div style="display:flex;gap:6px;align-items:center;">
-          <button class="btn btn-primary btn-sm myjobs-prep-btn" data-id="${escapeAttr(job.id)}" data-title="${escapeAttr(job.title || '')}" data-company="${escapeAttr(job.company || '')}" data-url="${escapeAttr(job.url || '')}">&#9889; Prep</button>
-          <button class="btn btn-danger btn-sm delete-applied" data-id="${escapeAttr(job.id)}">&#10005;</button>
+    html += `
+    <div class="myjobs-card" data-job-id="${escapeAttr(job.id)}">
+      <div class="myjobs-card-top">
+        <div class="myjobs-card-score">${buildScoreRingSVG(job.score || 0)}</div>
+        <div class="myjobs-card-info">
+          <a class="myjobs-card-title" href="${url}" target="_blank" rel="noopener">${title}</a>
+          <div class="myjobs-card-meta">${company}${date ? ' &middot; ' + date : ''}</div>
         </div>
-      </td>
-    </tr>`;
-
-    // Hidden JD preview row
-    if (hasJD) {
-      html += `<tr class="myjobs-jd-row" id="jd-row-${escapeAttr(job.id)}" style="display:none;">
-        <td colspan="6"><div class="myjobs-jd-content">${escapeHTML(job.jdText)}</div></td>
-      </tr>`;
-    }
+      </div>
+      <div class="myjobs-card-actions">
+        ${hasJD ? `<button class="btn btn-sm myjobs-jd-toggle" data-id="${escapeAttr(job.id)}">View JD</button>` : ''}
+        ${statusSelect}
+        <button class="btn btn-sm myjobs-prep-btn" style="background:linear-gradient(135deg,#6b8f71,#9ab89e);color:#fff;border:none;" data-id="${escapeAttr(job.id)}" data-url="${escapeAttr(job.url || '')}">Prep</button>
+        <button class="btn btn-sm btn-danger delete-applied" data-id="${escapeAttr(job.id)}" title="Delete">&#10005;</button>
+      </div>
+      ${hasJD ? `<div class="myjobs-jd-preview" id="jd-preview-${escapeAttr(job.id)}" style="display:none;"><div class="myjobs-jd-content">${escapeHTML(job.jdText)}</div></div>` : ''}
+    </div>`;
   }
 
-  html += '</tbody></table>';
+  html += '</div>';
   container.innerHTML = html;
 
   // Wire status dropdowns
@@ -1960,10 +1998,10 @@ function renderAppliedJobs(jobs) {
       const newStatus = select.value;
       try {
         await sendMessage({ type: 'UPDATE_JOB_STATUS', jobId, status: newStatus });
-        // Update the class for color
-        select.className = 'myjobs-status-select status-' + newStatus;
+        const c = statusColors[newStatus] || '#94a3b8';
+        select.style.borderColor = c;
+        select.style.color = c;
         showToast('Status updated to ' + newStatus);
-        // Update cached data
         const job = _allJobs.find(j => j.id === jobId);
         if (job) {
           job.status = newStatus;
@@ -1978,10 +2016,11 @@ function renderAppliedJobs(jobs) {
   // Wire JD preview toggles
   container.querySelectorAll('.myjobs-jd-toggle').forEach(btn => {
     btn.addEventListener('click', () => {
-      const row = document.getElementById('jd-row-' + btn.dataset.id);
-      if (row) {
-        row.style.display = row.style.display === 'none' ? '' : 'none';
-        btn.textContent = row.style.display === 'none' ? 'View JD' : 'Hide JD';
+      const preview = document.getElementById('jd-preview-' + btn.dataset.id);
+      if (preview) {
+        const visible = preview.style.display !== 'none';
+        preview.style.display = visible ? 'none' : 'block';
+        btn.textContent = visible ? 'View JD' : 'Hide JD';
       }
     });
   });
@@ -2000,12 +2039,11 @@ function renderAppliedJobs(jobs) {
     });
   });
 
-  // Wire Prep buttons — opens the job URL in a new tab and triggers interview prep via the extension panel
+  // Wire Prep buttons
   container.querySelectorAll('.myjobs-prep-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const url = btn.dataset.url;
       if (url && url !== '#') {
-        // Open the job page — the extension will auto-init there
         window.open(url, '_blank');
         showToast('Opening job page for interview prep...');
       } else {
@@ -2057,24 +2095,100 @@ function syncCurrentProfileFromForm() {
 }
 
 /**
- * Refreshes the visual state of all slot buttons to reflect:
- *   - Which slot is active (bold/highlighted via 'active' class)
- *   - Which slots contain data ('has-data' class adds a visual indicator)
- *   - The current human-readable name for each slot
- * Also updates the slot name input to show the active slot's name for editing.
+ * Legacy slot button updater — now delegates to renderResumeCards.
  */
 function updateSlotButtons() {
-  document.querySelectorAll('.profile-slot-btn').forEach(btn => {
-    const slot = parseInt(btn.dataset.slot);
-    // Toggle 'active' class — only the current activeSlot should be active
-    btn.classList.toggle('active', slot === activeSlot);
-    // Toggle 'has-data' if the slot has a non-null profile snapshot
-    btn.classList.toggle('has-data', !!profileSlots[slot]);
-    // Use the custom name or fall back to "Resume N" (1-based for readability)
-    btn.textContent = slotNames[slot] || `Resume ${slot + 1}`;
+  renderResumeCards();
+}
+
+/**
+ * Renders resume cards into #resumeCardsContainer.
+ * Reads from chrome.storage.local key `resumes` (array of
+ * { id, fileName, text, uploadDate, isPrimary }).
+ * Active/primary card gets sage border + "PRIMARY" badge.
+ * Max 10 resumes. Upload zone card is always last.
+ */
+async function renderResumeCards() {
+  const container = document.getElementById('resumeCardsContainer');
+  if (!container) return;
+
+  const result = await chrome.storage.local.get('resumes');
+  const resumes = result.resumes || [];
+
+  let html = '';
+  resumes.forEach((r, i) => {
+    const isPrimary = r.isPrimary === true;
+    const borderStyle = isPrimary ? 'border:2px solid #6b8f71;' : 'border:1px solid var(--ac-border);';
+    const badge = isPrimary ? '<span style="background:#6b8f71;color:#fff;font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;margin-left:8px;">PRIMARY</span>' : '';
+    const date = r.uploadDate ? new Date(r.uploadDate).toLocaleDateString() : '';
+    html += `
+    <div class="resume-card" style="${borderStyle}border-radius:8px;padding:12px;background:var(--ac-card-bg);cursor:pointer;" data-resume-idx="${i}">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-weight:600;font-size:14px;">${escapeHTML(r.fileName || 'Resume ' + (i+1))}${badge}</div>
+          <div style="font-size:11px;color:var(--ac-text-muted);">${date}</div>
+        </div>
+        <button class="btn btn-danger btn-sm resume-card-delete" data-resume-idx="${i}" title="Delete" style="font-size:12px;padding:2px 8px;">&#10005;</button>
+      </div>
+    </div>`;
   });
-  // Populate the rename input with the active slot's current name
-  document.getElementById('slotNameInput').value = slotNames[activeSlot] || '';
+
+  // Preserve upload zone before overwriting container
+  const uploadZoneEl = document.getElementById('uploadZone');
+  const uploadZoneClone = uploadZoneEl ? uploadZoneEl.cloneNode(true) : null;
+
+  container.innerHTML = html;
+
+  // Re-append upload zone (it was destroyed by innerHTML)
+  if (uploadZoneClone) {
+    container.appendChild(uploadZoneClone);
+    // Re-wire upload zone click/drag events
+    const newZone = container.querySelector('#uploadZone');
+    const newFileInput = document.getElementById('fileInput');
+    if (newZone && newFileInput) {
+      newZone.addEventListener('click', () => newFileInput.click());
+      newZone.addEventListener('dragover', e => { e.preventDefault(); newZone.classList.add('drag-over'); });
+      newZone.addEventListener('dragleave', () => newZone.classList.remove('drag-over'));
+      newZone.addEventListener('drop', e => { e.preventDefault(); newZone.classList.remove('drag-over'); if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]); });
+    }
+  }
+
+  // Click to set as primary
+  container.querySelectorAll('.resume-card').forEach(card => {
+    card.addEventListener('click', async (e) => {
+      if (e.target.closest('.resume-card-delete')) return; // Don't trigger on delete
+      const idx = parseInt(card.dataset.resumeIdx);
+      const stored = await chrome.storage.local.get('resumes');
+      const arr = stored.resumes || [];
+      arr.forEach((r, i) => { r.isPrimary = (i === idx); });
+      await chrome.storage.local.set({ resumes: arr });
+      // Update active profile's resumeFileName
+      if (arr[idx]) {
+        profileData.resumeFileName = arr[idx].fileName;
+        showResumeLoaded(arr[idx].fileName);
+      }
+      renderResumeCards();
+      showToast('Primary resume updated.');
+    });
+  });
+
+  // Delete buttons
+  container.querySelectorAll('.resume-card-delete').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.dataset.resumeIdx);
+      const stored = await chrome.storage.local.get('resumes');
+      const arr = stored.resumes || [];
+      arr.splice(idx, 1);
+      // If we deleted the primary, make the first one primary
+      if (arr.length > 0 && !arr.some(r => r.isPrimary)) {
+        arr[0].isPrimary = true;
+      }
+      await chrome.storage.local.set({ resumes: arr });
+      renderResumeCards();
+      showToast('Resume deleted.');
+    });
+  });
 }
 
 /**
@@ -2084,10 +2198,42 @@ function updateSlotButtons() {
  */
 async function loadProfileSlots() {
   try {
-    const result = await chrome.storage.local.get(['profileSlots', 'activeProfileSlot', 'slotNames']);
+    const result = await chrome.storage.local.get(['profileSlots', 'activeProfileSlot', 'slotNames', 'resumes']);
+
+    // Migration: old profileSlots → new resumes array
+    if (!result.resumes && result.profileSlots) {
+      const oldSlots = result.profileSlots;
+      const oldActive = result.activeProfileSlot || 0;
+      const migrated = [];
+      oldSlots.forEach((slot, i) => {
+        if (slot && slot.resumeFileName) {
+          migrated.push({
+            id: Date.now().toString(36) + i,
+            fileName: slot.resumeFileName,
+            text: slot.resumeText || '',
+            uploadDate: new Date().toISOString(),
+            isPrimary: i === oldActive
+          });
+        }
+      });
+      if (migrated.length > 0) {
+        // Ensure at least one is primary
+        if (!migrated.some(r => r.isPrimary)) migrated[0].isPrimary = true;
+        await chrome.storage.local.set({ resumes: migrated });
+      }
+    }
+
     profileSlots = result.profileSlots || [null, null, null];
     activeSlot   = result.activeProfileSlot || 0;
     slotNames    = result.slotNames || ['Resume 1', 'Resume 2', 'Resume 3'];
+
+    // If the active slot has resume info, show it in the upload zone
+    const slotData = profileSlots[activeSlot];
+    if (slotData && slotData.resumeFileName) {
+      profileData.resumeFileName = slotData.resumeFileName;
+      profileData.resumeText = slotData.resumeText || null;
+    }
+
     updateSlotButtons();
   } catch (e) { /* ignore */ }
 }
@@ -2103,43 +2249,40 @@ async function loadProfileSlots() {
 document.querySelectorAll('.profile-slot-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
     const newSlot = parseInt(btn.dataset.slot);
-    // No-op if the user clicks the already-active slot
     if (newSlot === activeSlot) return;
 
-    // Step 1: Capture any form edits and snapshot the current profile
-    syncCurrentProfileFromForm();
-    // Deep-copy via JSON round-trip to break object references
-    profileSlots[activeSlot] = JSON.parse(JSON.stringify(profileData));
-    activeSlot = newSlot;
+    // Profile data (name, email, skills, experience, etc.) is GLOBAL — never changes on slot switch.
+    // Only the resume document (uploaded file + parsed text) is per-slot.
+    // Save current resume doc info to old slot before switching.
+    const currentResumeInfo = {
+      resumeFileName: profileData.resumeFileName || null,
+      resumeText: profileData.resumeText || null,
+    };
+    profileSlots[activeSlot] = currentResumeInfo;
 
-    const newProfile = profileSlots[activeSlot];
-    if (newProfile) {
-      // Step 2a: Slot has data — deep-copy it into profileData and repopulate the form
-      profileData = JSON.parse(JSON.stringify(newProfile));
-      populateProfileForm();
-      // Show the resume filename or name in the upload zone
-      const displayName = profileData.resumeFileName || profileData.name || 'Resume';
-      showResumeLoaded(displayName);
+    activeSlot = newSlot;
+    const slotData = profileSlots[activeSlot];
+
+    if (slotData && slotData.resumeFileName) {
+      // Slot has a resume — update only the resume fields on profileData
+      profileData.resumeFileName = slotData.resumeFileName;
+      profileData.resumeText = slotData.resumeText || null;
+      showResumeLoaded(slotData.resumeFileName);
     } else {
-      // Step 2b: Slot is empty — reset profileData and restore the default upload zone
-      profileData = {
-        name: '', email: '', phone: '', location: '', linkedin: '', website: '',
-        summary: '', skills: [], experience: [], education: [], certifications: [], projects: []
-      };
-      populateProfileForm();
-      // Restore the original drag-and-drop prompt in the upload zone
+      // Slot is empty — clear resume fields, keep profile intact
+      profileData.resumeFileName = null;
+      profileData.resumeText = null;
       document.getElementById('uploadZone').innerHTML = `
         <div class="icon">&#128196;</div>
         <div class="text">Drag & drop your resume or click to browse</div>
         <div class="hint">Supports PDF and DOCX</div>`;
     }
 
-    // Step 3: Persist both the slots array and the active slot index.
-    // Also write 'profile' so the background service worker picks up the new active profile.
+    // Persist: profile stays the same, only slot index + resume slots change
     await chrome.storage.local.set({
       profileSlots,
       activeProfileSlot: activeSlot,
-      profile: profileSlots[activeSlot] || null  // null signals an empty slot to the background
+      profile: profileData,  // always the same global profile
     });
     updateSlotButtons();
     showToast(`Switched to ${slotNames[activeSlot]}.`);
@@ -2179,92 +2322,11 @@ document.getElementById('saveSlotNameBtn').addEventListener('click', async () =>
  * The skill frequency bars are rendered relative to the most-frequent missing
  * skill (which gets a 100% width bar; all others are proportional).
  */
+/**
+ * Stats dashboard — removed in Stitch redesign. No-op to avoid errors.
+ */
 async function renderStats() {
-  const container = document.getElementById('statsContent');
-  if (!container) return;
-  container.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px;">Loading\u2026</p>';
-  try {
-    // Read both storage keys in a single call for efficiency
-    const result    = await chrome.storage.local.get(['ac_analysisCache', 'appliedJobs']);
-    const cache     = result.ac_analysisCache || {};
-    const applied   = result.appliedJobs || [];
-    // Flatten the cache object into an array of analysis records
-    const analyses  = Object.values(cache);
-
-    // Extract all numeric matchScore values (skip entries where score is undefined)
-    const scores    = analyses.map(a => a.analysis?.matchScore).filter(s => typeof s === 'number');
-    // Arithmetic mean, rounded to the nearest integer
-    const avgScore  = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
-    // Color the average score using the same green/amber/red thresholds as the badge
-    const scoreColor = avgScore === null ? '#94a3b8' : avgScore >= 70 ? '#059669' : avgScore >= 45 ? '#d97706' : '#dc2626';
-
-    // Aggregate missing skills across all analyses into a frequency map
-    const skillCounts = {};
-    analyses.forEach(a => {
-      (a.analysis?.missingSkills || []).forEach(s => {
-        skillCounts[s] = (skillCounts[s] || 0) + 1;
-      });
-    });
-    // Sort descending by frequency and take the top 8 for the chart
-    const topMissing = Object.entries(skillCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
-
-    if (analyses.length === 0) {
-      container.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:30px 0;">No jobs analyzed yet. Visit a job posting and click Analyze Job in the side panel.</p>';
-      return;
-    }
-
-    // Count how many scores fall into each tier
-    const green = scores.filter(s => s >= 70).length;
-    const amber = scores.filter(s => s >= 45 && s < 70).length;
-    const red   = scores.filter(s => s < 45).length;
-
-    let html = `
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-value">${analyses.length}</div>
-          <div class="stat-label">Jobs Analyzed</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">${applied.length}</div>
-          <div class="stat-label">Jobs Applied</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value" style="color:${scoreColor}">${avgScore !== null ? avgScore + '%' : '\u2014'}</div>
-          <div class="stat-label">Avg Match Score</div>
-        </div>
-      </div>`;
-
-    if (scores.length > 0) {
-      html += `
-        <div class="stat-section-title">Score Distribution</div>
-        <div class="score-dist">
-          <div class="score-dist-bar" style="background:#d1fae5;color:#059669">${green}<small>Strong \u226570</small></div>
-          <div class="score-dist-bar" style="background:#fef3c7;color:#92400e">${amber}<small>Good 45\u201369</small></div>
-          <div class="score-dist-bar" style="background:#fee2e2;color:#dc2626">${red}<small>Low &lt;45</small></div>
-        </div>`;
-    }
-
-    if (topMissing.length > 0) {
-      // The most-frequent skill defines the 100% width; all others are proportional
-      const maxCount = topMissing[0][1];
-      html += `<div class="stat-section-title">Skills to Add to Your Resume</div>
-        <p style="font-size:12px;color:#94a3b8;margin-bottom:12px;">Appears as missing across your analyzed jobs.</p>`;
-      topMissing.forEach(([skill, count]) => {
-        // Percentage relative to the highest-count skill for proportional bar widths
-        const pct = Math.round((count / maxCount) * 100);
-        html += `
-          <div class="skill-freq-bar">
-            <div class="skill-freq-name">${escapeHTML(skill)}</div>
-            <div class="skill-freq-track"><div class="skill-freq-fill" style="width:${pct}%"></div></div>
-            <div class="skill-freq-count">${count}x</div>
-          </div>`;
-      });
-    }
-
-    container.innerHTML = html;
-  } catch (err) {
-    container.innerHTML = `<p style="color:#dc2626;">Error loading stats: ${escapeHTML(err.message)}</p>`;
-  }
+  // Stats tab removed in new design — no-op
 }
 
 // ─── Interview Prep Full-Page Report ──────────────────────────────────────────
@@ -2486,17 +2548,15 @@ function handleHash() {
     return;
   }
 
-  const validTabs = ['profile', 'qa', 'applied', 'stats', 'settings'];
+  const validTabs = ['profile', 'applied', 'settings'];
   if (validTabs.includes(hash)) {
-    // Deactivate all tabs and panels first
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-    // Activate the target tab button and its content panel
-    document.querySelector('[data-tab="' + hash + '"]').classList.add('active');
-    document.getElementById('tab-' + hash).classList.add('active');
-    // Lazy-load data for tabs that fetch it on demand
+    const tabBtn = document.querySelector('[data-tab="' + hash + '"]');
+    const tabPanel = document.getElementById('tab-' + hash);
+    if (tabBtn) tabBtn.classList.add('active');
+    if (tabPanel) tabPanel.classList.add('active');
     if (hash === 'applied') loadAppliedJobs();
-    if (hash === 'stats')   renderStats();
   }
 }
 
@@ -2556,6 +2616,137 @@ document.getElementById('profileThemeToggle').addEventListener('click', async ()
 
 // Load theme immediately on page load
 loadProfileTheme();
+
+// ─── Inline editing for data-intake-field elements ──────────────────────────
+
+/**
+ * Maps a data-intake-field prefix to the applicantContext section ID.
+ * e.g. "career-target_roles" → prefix "career" → section "career-goals"
+ */
+const INTAKE_FIELD_SECTION_MAP = {
+  'career':     'career-goals',
+  'summary':    'professional-summary',
+  'experience': 'experience-highlights',
+  'education':  'education',
+  'work':       'work-preferences',
+  'personal':   'personal-details',
+};
+
+/**
+ * Parses a data-intake-field value like "career-target_roles" into
+ * { sectionId: 'career-goals', fieldId: 'target_roles' }.
+ */
+function parseIntakeFieldKey(key) {
+  const dashIdx = key.indexOf('-');
+  if (dashIdx < 0) return null;
+  const prefix = key.substring(0, dashIdx);
+  const fieldId = key.substring(dashIdx + 1);
+  const sectionId = INTAKE_FIELD_SECTION_MAP[prefix];
+  if (!sectionId || !fieldId) return null;
+  return { sectionId, fieldId };
+}
+
+/** Fields that should use a textarea instead of a single-line input. */
+const LONG_INTAKE_FIELDS = new Set([
+  'target_roles', 'ideal_role', 'career_motivations',
+  'elevator_pitch', 'unique_value',
+  'recent_role', 'proudest_achievement', 'daily_tools', 'leadership_example',
+  'certifications', 'anything_else',
+]);
+
+/**
+ * Initialises inline editing on all [data-intake-field] span elements.
+ * Double-click replaces the span with an input/textarea; blur saves.
+ */
+function initInlineEditing() {
+  // Only target display spans — NOT the .ie-input elements
+  document.querySelectorAll('.ie-display[data-intake-field], .wp-value[data-intake-field]').forEach(span => {
+    span.addEventListener('dblclick', () => {
+      const key = span.dataset.intakeField;
+      const parsed = parseIntakeFieldKey(key);
+      if (!parsed) return;
+
+      const currentValue = getAnswer(parsed.sectionId, parsed.fieldId) || '';
+      const isLong = LONG_INTAKE_FIELDS.has(parsed.fieldId);
+
+      // Create the editor element
+      const editor = document.createElement(isLong ? 'textarea' : 'input');
+      editor.className = 'inline-edit-input';
+      if (!isLong) editor.type = 'text';
+      editor.value = currentValue;
+      if (isLong) editor.rows = 3;
+      editor.style.width = '100%';
+      editor.style.fontSize = 'inherit';
+      editor.style.fontFamily = 'inherit';
+
+      // Replace span with editor
+      span.style.display = 'none';
+      span.parentNode.insertBefore(editor, span.nextSibling);
+      editor.focus();
+
+      // Save on blur
+      const commit = () => {
+        const newValue = editor.value.trim();
+        setAnswer(parsed.sectionId, parsed.fieldId, newValue);
+        span.textContent = newValue || 'Click to edit...';
+        span.style.display = '';
+        if (editor.parentNode) editor.parentNode.removeChild(editor);
+      };
+
+      editor.addEventListener('blur', commit);
+      // Enter triggers blur for single-line inputs
+      if (!isLong) {
+        editor.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); editor.blur(); }
+        });
+      }
+    });
+  });
+}
+
+/**
+ * Loads saved applicantContext values into all [data-intake-field] spans.
+ */
+function loadInlineEditValues() {
+  // Only populate display spans — NOT inputs
+  document.querySelectorAll('.ie-display[data-intake-field], .wp-value[data-intake-field]').forEach(span => {
+    const key = span.dataset.intakeField;
+    const parsed = parseIntakeFieldKey(key);
+    if (!parsed) return;
+    const value = getAnswer(parsed.sectionId, parsed.fieldId);
+    if (value && value.trim()) {
+      span.textContent = value;
+    }
+    // else leave the default placeholder text
+  });
+}
+
+// ─── Text dump textarea wiring ──────────────────────────────────────────────
+
+/**
+ * Wires [data-dump-idx] textareas to save/load from
+ * applicantContext.textDumps[idx].
+ */
+function wireTextDumpTextareas() {
+  document.querySelectorAll('textarea[data-dump-idx]').forEach(ta => {
+    const idx = parseInt(ta.dataset.dumpIdx);
+    // Load existing value
+    const dumps = applicantContext.textDumps || [];
+    if (dumps[idx] && dumps[idx].content) {
+      ta.value = dumps[idx].content;
+    }
+    // Save on input
+    ta.addEventListener('input', () => {
+      if (!applicantContext.textDumps) applicantContext.textDumps = [];
+      // Ensure the array is long enough
+      while (applicantContext.textDumps.length <= idx) {
+        applicantContext.textDumps.push({ label: 'Resume', content: '', createdAt: new Date().toISOString() });
+      }
+      applicantContext.textDumps[idx].content = ta.value.substring(0, MAX_TEXT_DUMP_CHARS);
+      scheduleIntakeSave();
+    });
+  });
+}
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
