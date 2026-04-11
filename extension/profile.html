@@ -16,6 +16,30 @@
       font-style: normal;
       font-display: swap;
     }
+    @font-face {
+      font-family: 'Material Symbols Outlined';
+      src: url('fonts/MaterialSymbolsOutlined.woff2') format('woff2');
+      font-weight: 100 700;
+      font-style: normal;
+      font-display: block;
+    }
+    .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal;
+      font-style: normal;
+      font-size: 20px;
+      line-height: 1;
+      letter-spacing: normal;
+      text-transform: none;
+      display: inline-block;
+      white-space: nowrap;
+      word-wrap: normal;
+      direction: ltr;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+      font-feature-settings: 'liga';
+    }
 
     :root {
       --ac-primary: #4f614d;
@@ -153,7 +177,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 16px;
+      font-size: 20px;
       flex-shrink: 0;
       opacity: 0.8;
     }
@@ -397,6 +421,37 @@
       border-bottom: 2px solid var(--ac-primary-dark);
     }
 
+    /* Keyboard-visible focus rings — WCAG 2.4.7 requires visible focus for all interactive elements */
+    :focus-visible {
+      outline: 2px solid var(--ac-primary);
+      outline-offset: 2px;
+    }
+
+    /* Inputs already show border-bottom on focus, so use a shadow ring instead of outline */
+    input:focus-visible, textarea:focus-visible, select:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(79, 97, 77, 0.25);
+    }
+
+    /* Buttons, cards, interactive divs */
+    .btn:focus-visible,
+    .sidebar-nav-item:focus-visible,
+    .myjobs-filter:focus-visible,
+    .resume-card:focus-visible,
+    .upload-zone:focus-visible,
+    .intake-sidebar-item:focus-visible,
+    .sidebar-auth-signin:focus-visible,
+    .sidebar-signout-btn:focus-visible,
+    .top-header-icon-btn:focus-visible,
+    .myjobs-jd-btn:focus-visible,
+    .myjobs-prep-btn:focus-visible,
+    .myjobs-delete-btn:focus-visible,
+    .resume-card-delete:focus-visible,
+    .resume-card-preview:focus-visible {
+      outline: 2px solid var(--ac-primary);
+      outline-offset: 2px;
+    }
+
     textarea { min-height: 80px; resize: vertical; }
 
     .form-row {
@@ -509,6 +564,118 @@
     .resume-card-date {
       font-size: 11px;
       color: var(--ac-text-muted);
+    }
+
+    .resume-card-delete {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      width: 22px;
+      height: 22px;
+      border: none;
+      border-radius: 50%;
+      background: #fee2e2;
+      color: #dc2626;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.15s;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .resume-card:hover .resume-card-delete { opacity: 1; }
+    .resume-card-delete:hover { background: #fecaca; }
+
+    .resume-card-preview {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border: 1px solid var(--ac-border);
+      border-radius: 12px;
+      background: var(--ac-surface-low);
+      color: var(--ac-text-secondary);
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+
+    .resume-card-preview:hover,
+    .resume-card-preview:focus-visible { border-color: var(--ac-primary); color: var(--ac-primary); outline: none; }
+
+    /* ── Resume Preview Modal ── */
+    .resume-preview-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .resume-preview-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+    }
+
+    .resume-preview-content {
+      position: relative;
+      width: 90%;
+      max-width: 700px;
+      max-height: 80vh;
+      background: var(--ac-bg);
+      border-radius: var(--ac-radius-xl);
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.2);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .resume-preview-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--ac-border);
+    }
+
+    .resume-preview-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--ac-text);
+    }
+
+    .resume-preview-close {
+      width: 32px;
+      height: 32px;
+      border: none;
+      border-radius: 50%;
+      background: var(--ac-surface-low);
+      color: var(--ac-text-secondary);
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    .resume-preview-close:hover { background: var(--ac-surface-mid); }
+
+    .resume-preview-text {
+      padding: 20px;
+      overflow-y: auto;
+      font-size: 13px;
+      line-height: 1.7;
+      color: var(--ac-text-secondary);
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: inherit;
+      margin: 0;
     }
 
     /* Upload zone card */
@@ -852,7 +1019,8 @@
 
     .inline-editable .ie-display:hover { background: var(--ac-input-bg); }
 
-    .inline-editable .ie-display:empty::after {
+    .inline-editable .ie-display:empty::after,
+    .inline-editable .ie-display[data-empty]::after {
       content: 'Click to edit...';
       color: var(--ac-text-muted);
       font-style: italic;
@@ -988,13 +1156,13 @@
     }
 
     /* ══════════════════════════════════════════════
-       MY JOBS — CARD BASED
+       MY JOBS — REDESIGN
     ══════════════════════════════════════════════ */
     .myjobs-header {
       display: flex;
       align-items: center;
       gap: 12px;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
 
     .myjobs-header h1 {
@@ -1011,16 +1179,19 @@
       background: var(--ac-tag-bg);
       color: var(--ac-tag-text);
       border-radius: 20px;
-      font-size: 13px;
-      font-weight: 600;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
     }
 
     .myjobs-subtitle {
       font-size: 14px;
       color: var(--ac-text-muted);
-      margin-bottom: 24px;
+      margin-bottom: 20px;
     }
 
+    /* Filter pills */
     .myjobs-filters {
       display: flex;
       gap: 6px;
@@ -1029,7 +1200,10 @@
     }
 
     .myjobs-filter {
-      padding: 6px 16px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 14px;
       border: none;
       border-radius: 20px;
       font-size: 13px;
@@ -1042,115 +1216,241 @@
     }
 
     .myjobs-filter:hover { background: var(--ac-surface-mid); }
+    .myjobs-filter.active { background: var(--ac-primary); color: #fff; }
+    .myjobs-filter-count { font-size: 11px; font-weight: 700; opacity: 0.75; }
 
-    .myjobs-filter.active {
-      background: var(--ac-primary);
-      color: #fff;
-    }
+    /* Card list */
+    .myjobs-cards { display: flex; flex-direction: column; gap: 10px; }
 
-    .myjobs-filter .filter-count {
-      font-size: 11px;
-      opacity: 0.7;
-      margin-left: 4px;
-    }
-
-    /* Job Card */
-    .job-card {
+    .myjobs-card {
       background: var(--ac-bg);
       border: 1px solid var(--ac-border);
       border-radius: var(--ac-radius-xl);
-      padding: 20px;
-      margin-bottom: 12px;
+      padding: 16px 20px;
       box-shadow: var(--ac-botanical-shadow);
-      transition: border-color 0.15s;
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
 
-    .job-card:hover { border-color: var(--ac-primary); }
+    .myjobs-card:hover {
+      border-color: var(--ac-primary);
+      box-shadow: 0 4px 16px rgba(79, 97, 77, 0.12);
+    }
 
-    .job-card-top {
+    /* Single-row layout */
+    .myjobs-card-row {
       display: flex;
       align-items: center;
       gap: 16px;
+      flex-wrap: nowrap;
     }
 
-    .job-card-score {
+    /* Score ring */
+    .myjobs-score-ring {
       flex-shrink: 0;
-      width: 64px; height: 64px;
+      width: 64px;
+      height: 64px;
+      position: relative;
     }
 
-    .job-card-score svg { transform: rotate(-90deg); }
+    .myjobs-score-ring svg { width: 64px; height: 64px; display: block; }
 
-    .job-card-info { flex: 1; min-width: 0; }
+    .myjobs-score-inner {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
 
-    .job-card-title {
+    .myjobs-score-pct {
+      font-size: 15px;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -0.5px;
+    }
+
+    .myjobs-score-label {
+      font-size: 7px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      opacity: 0.6;
+      margin-top: 1px;
+    }
+
+    /* Info block */
+    .myjobs-card-info { flex: 1; min-width: 0; }
+
+    .myjobs-card-title {
       font-size: 15px;
       font-weight: 700;
       color: var(--ac-text);
       text-decoration: none;
       letter-spacing: -0.2px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
     }
 
-    .job-card-title:hover { color: var(--ac-primary); }
+    .myjobs-card-title:hover { color: var(--ac-primary); }
+    .myjobs-title-icon { font-size: 10px; opacity: 0.45; }
 
-    .job-card-company {
-      font-size: 13px;
-      color: var(--ac-text-secondary);
-    }
-
-    .job-card-date {
+    .myjobs-card-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 4px;
       font-size: 12px;
-      color: var(--ac-text-muted);
+      color: var(--ac-text-secondary);
+      flex-wrap: wrap;
     }
 
-    .job-card-actions-btn {
+    .myjobs-meta-item { display: inline-flex; align-items: center; gap: 3px; }
+    .myjobs-meta-icon { opacity: 0.55; }
+
+    /* Actions */
+    .myjobs-card-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    /* View JD */
+    .myjobs-jd-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
       padding: 6px 12px;
-      border-radius: var(--ac-radius-lg);
       border: 1px solid var(--ac-border);
+      border-radius: var(--ac-radius-lg);
       background: var(--ac-bg);
       font-size: 12px;
       font-weight: 500;
       font-family: inherit;
       cursor: pointer;
       color: var(--ac-text-secondary);
+      white-space: nowrap;
       transition: all 0.15s;
     }
 
-    .job-card-actions-btn:hover { border-color: var(--ac-primary); color: var(--ac-primary); }
+    .myjobs-jd-btn:hover { border-color: var(--ac-primary); color: var(--ac-primary); }
 
-    .job-card-divider {
-      border: none;
-      border-top: 1px solid var(--ac-border);
-      margin: 14px 0;
-    }
-
-    .job-card-bottom {
-      display: flex;
+    /* Status pill select — wrapper keeps chevron visible over colored bg */
+    .myjobs-status-wrap {
+      position: relative;
+      display: inline-flex;
       align-items: center;
-      gap: 10px;
+      flex-shrink: 0;
     }
 
-    .myjobs-status-select {
-      padding: 4px 10px;
-      border-radius: var(--ac-radius-lg);
-      border: 1px solid var(--ac-border);
+    .myjobs-status-wrap::after {
+      content: '';
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 0;
+      height: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-top: 5px solid currentColor;
+      pointer-events: none;
+      opacity: 0.6;
+    }
+
+    .myjobs-status-pill {
+      padding: 6px 28px 6px 12px;
+      border-radius: 20px;
+      border: 1.5px solid transparent;
       font-size: 11px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      appearance: none;
+      -webkit-appearance: none;
+      transition: filter 0.15s, border-color 0.15s;
+      min-width: 90px;
+    }
+
+    .myjobs-status-pill:hover { filter: brightness(0.93); border-color: rgba(0,0,0,0.12); }
+
+    .myjobs-status-pill.status-saved     { background: #edeeed; color: #4a4e4a; }
+    .myjobs-status-pill.status-applied   { background: #dbeafe; color: #1d4ed8; }
+    .myjobs-status-pill.status-interview { background: #ede9fe; color: #6d28d9; }
+    .myjobs-status-pill.status-offer     { background: #d1fae5; color: #065f46; }
+    .myjobs-status-pill.status-rejected  { background: #fee2e2; color: #b91c1c; }
+    .myjobs-status-pill.status-withdrawn { background: #f1f5f9; color: #64748b; }
+
+    /* Sync wrapper color with pill for the chevron */
+    .myjobs-status-wrap:has(.status-saved)     { color: #4a4e4a; }
+    .myjobs-status-wrap:has(.status-applied)   { color: #1d4ed8; }
+    .myjobs-status-wrap:has(.status-interview) { color: #6d28d9; }
+    .myjobs-status-wrap:has(.status-offer)     { color: #065f46; }
+    .myjobs-status-wrap:has(.status-rejected)  { color: #b91c1c; }
+    .myjobs-status-wrap:has(.status-withdrawn) { color: #64748b; }
+
+    /* Prep button */
+    .myjobs-prep-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 7px 14px;
+      border-radius: var(--ac-radius-lg);
+      border: none;
+      background: var(--ac-primary-gradient);
+      color: #fff;
+      font-size: 12px;
       font-weight: 600;
       font-family: inherit;
       cursor: pointer;
-      background: var(--ac-card-bg);
+      white-space: nowrap;
+      transition: filter 0.15s;
     }
 
-    .myjobs-status-select.status-saved { background: #edeeed; color: #434842; }
-    .myjobs-status-select.status-applied { background: #d1e8cf; color: #2d4a2a; }
-    .myjobs-status-select.status-interview { background: #d6e3ff; color: #1e3a5f; }
-    .myjobs-status-select.status-offer { background: #d1fae5; color: #065f46; }
-    .myjobs-status-select.status-rejected { background: #f5d5d5; color: #8b2525; }
-    .myjobs-status-select.status-withdrawn { background: #edeeed; color: #727971; }
+    .myjobs-prep-btn:hover { filter: brightness(1.1); }
 
-    .myjobs-jd-row td { padding: 0 !important; }
+    /* Delete button */
+    .myjobs-delete-btn {
+      width: 32px;
+      height: 32px;
+      border: none;
+      border-radius: var(--ac-radius-lg);
+      background: #fee2e2;
+      color: #dc2626;
+      font-size: 15px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+
+    .myjobs-delete-btn:hover { background: #fecaca; }
+
+    .myjobs-delete-btn[data-confirming="true"] {
+      width: auto;
+      padding: 0 10px;
+      background: #fee2e2;
+      color: #dc2626;
+      font-size: 11px;
+      font-weight: 700;
+      border: 1px solid #fca5a5;
+    }
+
+    /* JD panel */
+    .myjobs-jd-preview {
+      margin-top: 12px;
+      border-top: 1px solid var(--ac-border);
+      padding-top: 12px;
+    }
 
     .myjobs-jd-content {
-      max-height: 200px;
+      max-height: 220px;
       overflow-y: auto;
       padding: 12px 16px;
       background: var(--ac-surface-low);
@@ -1159,22 +1459,7 @@
       color: var(--ac-text-secondary);
       white-space: pre-wrap;
       border-radius: var(--ac-radius-lg);
-      margin-top: 10px;
     }
-
-    .score-badge {
-      display: inline-block;
-      padding: 2px 10px;
-      border-radius: 12px;
-      font-weight: 600;
-      font-size: 12px;
-      min-width: 36px;
-      text-align: center;
-    }
-
-    .score-badge-green { background: #d1fae5; color: #059669; }
-    .score-badge-amber { background: #fef3c7; color: #92400e; }
-    .score-badge-red { background: #fee2e2; color: #dc2626; }
 
     .applied-empty {
       text-align: center;
@@ -1518,18 +1803,37 @@
       position: fixed;
       bottom: 24px;
       right: 24px;
-      padding: 12px 24px;
-      background: var(--ac-text);
-      color: white;
+      padding: 11px 20px;
+      background: #1e2120;
+      color: #fff;
       border-radius: var(--ac-radius-lg);
-      font-size: 14px;
+      font-size: 13px;
+      font-weight: 500;
       z-index: 9999;
       opacity: 0;
-      transform: translateY(10px);
-      transition: all 0.3s;
+      transform: translateY(8px);
+      transition: opacity 0.25s, transform 0.25s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 340px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+      pointer-events: none;
     }
 
-    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: #6b7280;
+    }
+
+    .toast.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+    .toast.toast-success::before { background: #22c55e; }
+    .toast.toast-error::before   { background: #ef4444; }
+    .toast.toast-info::before    { background: #60a5fa; }
 
     /* ══════════════════════════════════════════════
        LEGACY COMPAT
@@ -1760,24 +2064,27 @@
       <div class="sidebar-subtitle">Premium Access</div>
     </div>
 
-    <div class="sidebar-nav">
+    <nav class="sidebar-nav" role="tablist" aria-label="Main navigation">
       <div class="sidebar-nav-label">Menu</div>
 
-      <button class="sidebar-nav-item tab active" data-tab="profile">
-        <span class="sidebar-nav-icon">&#128100;</span>
+      <button class="sidebar-nav-item tab active" data-tab="profile"
+              role="tab" aria-selected="true" aria-controls="tab-profile" id="nav-profile">
+        <span class="sidebar-nav-icon material-symbols-outlined" aria-hidden="true">person</span>
         User Context
       </button>
 
-      <button class="sidebar-nav-item tab" data-tab="applied">
-        <span class="sidebar-nav-icon">&#128188;</span>
+      <button class="sidebar-nav-item tab" data-tab="applied"
+              role="tab" aria-selected="false" aria-controls="tab-applied" id="nav-applied">
+        <span class="sidebar-nav-icon material-symbols-outlined" aria-hidden="true">work</span>
         My Jobs
       </button>
 
-      <button class="sidebar-nav-item tab" data-tab="settings">
-        <span class="sidebar-nav-icon">&#9881;</span>
+      <button class="sidebar-nav-item tab" data-tab="settings"
+              role="tab" aria-selected="false" aria-controls="tab-settings" id="nav-settings">
+        <span class="sidebar-nav-icon material-symbols-outlined" aria-hidden="true">settings</span>
         AI Settings
       </button>
-    </div>
+    </nav>
 
     <div class="sidebar-bottom">
       <button id="authSignInBtn" class="sidebar-auth-signin" style="display:none;" title="Sign in with Google">
@@ -1797,7 +2104,7 @@
   <header class="top-header">
     <span class="top-header-title">Applicant Copilot</span>
     <div class="top-header-right">
-      <button class="top-header-icon-btn" id="profileThemeToggle" title="Switch theme">&#9881;</button>
+      <button class="top-header-icon-btn" id="profileThemeToggle" title="Switch theme"><span class="material-symbols-outlined">dark_mode</span></button>
     </div>
   </header>
 
@@ -1828,13 +2135,13 @@
           <!-- Example card structure:
           <div class="resume-card active">
             <span class="primary-badge">PRIMARY</span>
-            <span class="resume-card-icon">&#128196;</span>
+            <span class="resume-card-icon material-symbols-outlined">description</span>
             <span class="resume-card-name">Software_Engineer.pdf</span>
             <span class="resume-card-date">Apr 9, 2026</span>
           </div>
           -->
           <div class="upload-zone" id="uploadZone">
-            <span class="upload-zone-icon">&#8682;</span>
+            <span class="upload-zone-icon material-symbols-outlined">upload</span>
             <span class="upload-zone-text">Upload New</span>
             <span class="upload-zone-hint">PDF or DOCX</span>
           </div>
@@ -1842,15 +2149,16 @@
         <input type="file" id="fileInput" accept=".pdf,.docx" style="display:none">
         <div class="upload-status" id="uploadStatus"></div>
 
-        <div class="slot-rename-row">
-          <input type="text" id="slotNameInput" placeholder="Rename this resume profile...">
-          <button class="btn btn-secondary btn-sm" id="saveSlotNameBtn">Rename</button>
+        <!-- Hidden: slot system deprecated — inputs kept for JS compatibility -->
+        <div style="display:none;">
+          <input type="text" id="slotNameInput">
+          <button id="saveSlotNameBtn"></button>
         </div>
 
         <hr class="section-divider">
 
         <!-- ── 2. Personal Information + Professional Summary ── -->
-        <div style="display:grid;grid-template-columns:2fr 1fr;gap:32px;margin-bottom:32px;">
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:32px;margin-bottom:32px;align-items:start;">
           <div>
             <h2 class="section-heading">Personal Information</h2>
             <div class="card">
@@ -1886,9 +2194,9 @@
               </div>
             </div>
           </div>
-          <div>
+          <div style="display:flex;flex-direction:column;">
             <h2 class="section-heading">Professional Summary</h2>
-            <textarea id="pSummary" rows="12" style="border-radius:var(--ac-radius-xl);padding:16px;font-size:13px;line-height:1.7;resize:none;height:calc(100% - 40px);"></textarea>
+            <textarea id="pSummary" rows="12" style="border-radius:var(--ac-radius-xl);padding:16px;font-size:13px;line-height:1.7;resize:none;min-height:280px;flex:1;"></textarea>
           </div>
         </div>
 
@@ -2096,7 +2404,7 @@
 
         <!-- ── 9. EEO Compliance & Demographics ── -->
         <details class="accordion-card">
-          <summary>&#128737; EEO Compliance & Demographics</summary>
+          <summary><span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle;">shield</span> EEO Compliance & Demographics</summary>
           <div class="accordion-body">
             <p class="eeo-disclaimer">This information is used solely for autofilling voluntary self-identification forms required by many employers. It is never sent to AI models or shared with third parties. You can leave any field blank.</p>
             <div class="eeo-grid">
@@ -2160,19 +2468,19 @@
         </div>
 
         <div class="myjobs-filters" id="myJobsFilters">
-          <button class="myjobs-filter active" data-filter="all">All</button>
-          <button class="myjobs-filter" data-filter="saved">Saved</button>
-          <button class="myjobs-filter" data-filter="applied">Applied</button>
-          <button class="myjobs-filter" data-filter="interview">Interview</button>
-          <button class="myjobs-filter" data-filter="offer">Offer</button>
-          <button class="myjobs-filter" data-filter="rejected">Rejected</button>
-          <button class="myjobs-filter" data-filter="withdrawn">Withdrawn</button>
+          <button class="myjobs-filter active" data-filter="all">All <span class="myjobs-filter-count"></span></button>
+          <button class="myjobs-filter" data-filter="saved">Saved <span class="myjobs-filter-count"></span></button>
+          <button class="myjobs-filter" data-filter="applied">Applied <span class="myjobs-filter-count"></span></button>
+          <button class="myjobs-filter" data-filter="interview">Interview <span class="myjobs-filter-count"></span></button>
+          <button class="myjobs-filter" data-filter="offer">Offer <span class="myjobs-filter-count"></span></button>
+          <button class="myjobs-filter" data-filter="rejected">Rejected <span class="myjobs-filter-count"></span></button>
+          <button class="myjobs-filter" data-filter="withdrawn">Withdrawn <span class="myjobs-filter-count"></span></button>
         </div>
 
         <div id="appliedJobsList">
           <!-- JS renders job cards here. Empty state below shown when empty -->
           <div class="applied-empty" id="appliedEmptyState">
-            <div class="applied-empty-icon">&#128188;</div>
+            <div class="applied-empty-icon"><span class="material-symbols-outlined" style="font-size:48px;">work</span></div>
             <div class="applied-empty-title">No jobs tracked yet</div>
             <p>Open any job listing and click "Save Job" in the Copilot panel to start tracking your pipeline.</p>
           </div>
@@ -2329,7 +2637,7 @@
     <div class="floating-save-bar" id="floatingSaveBar">
       <span class="autosave-text">Last auto-saved a few moments ago</span>
       <button class="btn btn-primary" id="saveProfileBtn" style="background:var(--ac-primary-gradient);">
-        &#128190; Save Profile
+        <span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle;">save</span> Save Profile
       </button>
     </div>
 

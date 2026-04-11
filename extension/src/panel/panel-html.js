@@ -15,7 +15,7 @@ export function getPanelHTML() {
       <!-- Header: Brand + Gear icon -->
       <div class="jm-header">
         <div class="jm-header-brand">
-          <span class="jm-header-icon">&#9650;</span>
+          <span class="jm-header-icon"><span class="material-symbols-outlined" style="font-size:18px;">change_history</span></span>
           <span class="jm-header-title">Applicant Copilot</span>
         </div>
         <button class="jm-header-gear" id="jmGearBtn" aria-label="Settings" title="Profile & Settings">
@@ -36,8 +36,8 @@ export function getPanelHTML() {
             <div class="jm-job-title" id="jmJobTitle"></div>
             <div class="jm-job-company" id="jmJobCompany"></div>
             <div class="jm-job-meta">
-              <span id="jmJobLocation" style="display:none">&#128205; <span id="jmJobLocationText"></span></span>
-              <span id="jmJobSalary" style="display:none">&#128176; <span id="jmJobSalaryText"></span></span>
+              <span id="jmJobLocation" style="display:none"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;">location_on</span> <span id="jmJobLocationText"></span></span>
+              <span id="jmJobSalary" style="display:none"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;">payments</span> <span id="jmJobSalaryText"></span></span>
             </div>
           </div>
 
@@ -46,8 +46,8 @@ export function getPanelHTML() {
             <button class="jm-btn jm-btn-secondary" id="jmAutofill">AutoFill Application</button>
             <button class="jm-btn jm-btn-success" id="jmSaveJob" style="display:none">Save Job</button>
             <button class="jm-btn jm-btn-applied" id="jmMarkApplied" style="display:none">Mark as Applied</button>
-            <button class="jm-btn jm-btn-outline" id="jmCoverLetterBtn" style="display:none">&#9993; Cover Letter</button>
-            <button class="jm-btn jm-btn-outline" id="jmGenerateResumeBtn" style="display:none">&#128196; ATS Resume</button>
+            <button class="jm-btn jm-btn-outline" id="jmCoverLetterBtn" style="display:none"><span class="material-symbols-outlined" style="font-size:16px;">mail</span> Cover Letter</button>
+            <button class="jm-btn jm-btn-outline" id="jmGenerateResumeBtn" style="display:none"><span class="material-symbols-outlined" style="font-size:16px;">description</span> ATS Resume</button>
           </div>
 
           <!-- Score Section with SVG ring -->
@@ -68,7 +68,7 @@ export function getPanelHTML() {
 
           <div class="jm-section" id="jmMatchingSection">
             <div class="jm-section-header">
-              <span class="jm-section-icon">&#10004;</span>
+              <span class="jm-section-icon"><span class="material-symbols-outlined" style="font-size:18px;">check_circle</span></span>
               <h3>Matching Skills</h3>
               <span class="jm-section-count" id="jmMatchCount"></span>
             </div>
@@ -77,7 +77,7 @@ export function getPanelHTML() {
 
           <div class="jm-section" id="jmMissingSection">
             <div class="jm-section-header">
-              <span class="jm-section-icon jm-icon-gap">&#9678;</span>
+              <span class="jm-section-icon jm-icon-gap"><span class="material-symbols-outlined" style="font-size:18px;">trending_up</span></span>
               <h3>Growth Gaps</h3>
             </div>
             <div class="jm-tags" id="jmMissingSkills"></div>
@@ -100,10 +100,10 @@ export function getPanelHTML() {
 
           <!-- Truncation notices -->
           <div class="jm-trunc-notice" id="jmTruncNotice">
-            &#9888; Job description was too long and was trimmed — match score may be approximate.
+            <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;">warning</span> Job description was too long and was trimmed — match score may be approximate.
           </div>
           <div class="jm-trunc-notice" id="jmResumeTruncNotice">
-            &#9888; Note: Your resume was truncated for analysis. Consider shortening it for better results.
+            <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;">warning</span> Note: Your resume was truncated for analysis. Consider shortening it for better results.
           </div>
 
           <!-- AutoFill preview -->
@@ -146,25 +146,25 @@ export function getPanelHTML() {
               <div style="margin-bottom:10px;">
                 <textarea class="jm-notes-textarea" id="jmResumeInstructions" placeholder="Add your own: e.g. 'Remove internship from 2019', 'Add AWS cert', 'Emphasize Python + ML'..." style="min-height:50px;font-size:12px;"></textarea>
               </div>
-              <button class="jm-btn jm-btn-primary" id="jmDoGenerateResume" style="width:100%;">&#10024; Generate Resume</button>
+              <button class="jm-btn jm-btn-primary" id="jmDoGenerateResume" style="width:100%;"><span class="material-symbols-outlined" style="font-size:16px;">auto_awesome</span> Generate Resume</button>
             </div>
 
             <div id="jmResumeResult" style="display:none;">
               <div class="jm-resume-result-header">
-                <span class="jm-resume-result-badge">&#9989; Resume ready</span>
+                <span class="jm-resume-result-badge"><span class="material-symbols-outlined" style="font-size:16px;">check_circle</span> Resume ready</span>
                 <span class="jm-resume-result-meta" id="jmResumeResultMeta"></span>
               </div>
               <div class="jm-resume-mini-preview" id="jmResumeMiniPreview" role="button" tabindex="0" aria-label="Click to open full resume preview">
                 <div class="jm-resume-mini-content" id="jmResumeMiniContent"></div>
                 <div class="jm-resume-mini-fade">
-                  <span>Click to open full preview &#8599;</span>
+                  <span>Click to open full preview <span class="material-symbols-outlined" style="font-size:14px;">open_in_new</span></span>
                 </div>
               </div>
               <div class="jm-resume-actions">
-                <button class="jm-btn jm-btn-primary" id="jmOpenResumePreview" style="flex:2;">&#128196; Open Full Preview</button>
+                <button class="jm-btn jm-btn-primary" id="jmOpenResumePreview" style="flex:2;"><span class="material-symbols-outlined" style="font-size:16px;">description</span> Open Full Preview</button>
                 <button class="jm-btn jm-btn-secondary" id="jmCopyResume" style="flex:1;">Copy</button>
               </div>
-              <button class="jm-btn jm-btn-outline jm-resume-redo" id="jmRedoResume">&#128260; Regenerate with changes</button>
+              <button class="jm-btn jm-btn-outline jm-resume-redo" id="jmRedoResume"><span class="material-symbols-outlined" style="font-size:16px;">refresh</span> Regenerate with changes</button>
               <div id="jmResumeText" style="display:none;"></div>
             </div>
           </div>
@@ -194,7 +194,7 @@ export function getPanelHTML() {
                 <div class="jm-coach-name">AI Coach</div>
                 <div class="jm-coach-role">Professional Career Advisor</div>
               </div>
-              <button class="jm-chat-clear" id="jmChatClear" aria-label="Clear conversation" title="Clear conversation">&#128465;</button>
+              <button class="jm-chat-clear" id="jmChatClear" aria-label="Clear conversation" title="Clear conversation"><span class="material-symbols-outlined" style="font-size:20px;">delete</span></button>
             </div>
 
             <!-- Context badge — visible when analysis exists -->
@@ -223,10 +223,10 @@ export function getPanelHTML() {
               <div class="jm-chat-empty" id="jmChatEmptyReady" style="display:none">
                 <div class="jm-chat-empty-text">I've analyzed your profile and the current job description. How can I help you prepare?</div>
                 <div class="jm-chat-chips" id="jmChatChips">
-                  <button class="jm-chat-chip" aria-label="Ask: Am I a good fit for this role?">&#10004; Am I a good fit?</button>
-                  <button class="jm-chat-chip" aria-label="Ask: Help me prepare for the interview">&#128640; How to prepare?</button>
-                  <button class="jm-chat-chip" aria-label="Ask: Tell me about this company">&#128270; Company research</button>
-                  <button class="jm-chat-chip" aria-label="Ask: What should I highlight from my experience?">&#11088; What to highlight?</button>
+                  <button class="jm-chat-chip" aria-label="Ask: Am I a good fit for this role?"><span class="material-symbols-outlined" style="font-size:16px;">check_circle</span> Am I a good fit?</button>
+                  <button class="jm-chat-chip" aria-label="Ask: Help me prepare for the interview"><span class="material-symbols-outlined" style="font-size:16px;">rocket_launch</span> How to prepare?</button>
+                  <button class="jm-chat-chip" aria-label="Ask: Tell me about this company"><span class="material-symbols-outlined" style="font-size:16px;">search</span> Company research</button>
+                  <button class="jm-chat-chip" aria-label="Ask: What should I highlight from my experience?"><span class="material-symbols-outlined" style="font-size:16px;">star</span> What to highlight?</button>
                 </div>
               </div>
             </div>
@@ -235,16 +235,16 @@ export function getPanelHTML() {
             <div class="jm-chat-suggested" id="jmChatSuggested" style="display:none">
               <div class="jm-chat-suggested-label">SUGGESTED TOPICS</div>
               <div class="jm-chat-chips" id="jmChatSuggestedChips">
-                <button class="jm-chat-chip" aria-label="Ask: Am I a good fit for this role?">&#10004; Am I a good fit?</button>
-                <button class="jm-chat-chip" aria-label="Ask: Help me prepare for the interview">&#128640; How to prepare?</button>
-                <button class="jm-chat-chip" aria-label="Ask: Tell me about this company">&#128270; Company research</button>
+                <button class="jm-chat-chip" aria-label="Ask: Am I a good fit for this role?"><span class="material-symbols-outlined" style="font-size:16px;">check_circle</span> Am I a good fit?</button>
+                <button class="jm-chat-chip" aria-label="Ask: Help me prepare for the interview"><span class="material-symbols-outlined" style="font-size:16px;">rocket_launch</span> How to prepare?</button>
+                <button class="jm-chat-chip" aria-label="Ask: Tell me about this company"><span class="material-symbols-outlined" style="font-size:16px;">search</span> Company research</button>
               </div>
             </div>
 
             <!-- Input area — sticky bottom -->
             <div class="jm-chat-input-row" id="jmChatInputRow" style="display:none">
               <textarea class="jm-chat-input" id="jmChatInput" placeholder="Ask AI Coach anything..." rows="1" aria-label="Chat message input"></textarea>
-              <button class="jm-chat-send" id="jmChatSend" aria-label="Send message" title="Send">&#10148;</button>
+              <button class="jm-chat-send" id="jmChatSend" aria-label="Send message" title="Send"><span class="material-symbols-outlined" style="font-size:20px;">send</span></button>
             </div>
           </div>
         </div>
@@ -263,7 +263,7 @@ export function getPanelHTML() {
         <!-- ═══ Interview Prep Tab (sub-view of Saved) ═══ -->
         <div class="jm-tab-content" id="jmInterviewPrepTab">
           <div class="jm-prep-header">
-            <button class="jm-prep-back" id="jmPrepBack" aria-label="Back to Saved Jobs">&#8592;</button>
+            <button class="jm-prep-back" id="jmPrepBack" aria-label="Back to Saved Jobs"><span class="material-symbols-outlined" style="font-size:20px;">arrow_back</span></button>
             <div>
               <div class="jm-prep-title" id="jmPrepTitle"></div>
               <div class="jm-prep-subtitle" id="jmPrepSubtitle"></div>

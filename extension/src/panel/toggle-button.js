@@ -22,7 +22,7 @@ export function createToggleButton() {
     const btn = document.createElement('button');
     btn.className = 'jm-toggle';
     btn.id = 'applicant-copilot-toggle';
-    btn.innerHTML = '&#9650;';
+    btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:24px;">change_history</span>';
     btn.title = 'Applicant Copilot';
     btn.setAttribute('role', 'button');
     btn.setAttribute('aria-label', 'Open Applicant Copilot panel');

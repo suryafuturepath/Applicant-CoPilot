@@ -116,10 +116,10 @@ function sendMessage(msg) {
  *
  * @param {string} msg - Human-readable message to display.
  */
-function showToast(msg) {
+function showToast(msg, type = '') {
   const el = document.getElementById('toast');
   el.textContent = msg;
-  el.classList.add('show');
+  el.className = 'toast show' + (type ? ' toast-' + type : '');
   setTimeout(() => el.classList.remove('show'), 2500);
 }
 
@@ -138,19 +138,57 @@ function setUploadStatus(text, type) {
 }
 
 /**
- * Replaces the upload zone's inner HTML with a "resume loaded" confirmation
- * that shows the file name and a hint to re-upload if desired.
- *
- * @param {string|null} fileName - The resume file name (or profile name) to display.
+ * Resets the upload zone back to its default "Upload New" state.
+ * Called after renderResumeCards to ensure the zone never gets stuck
+ * showing a "loaded" confirmation.
  */
-function showResumeLoaded(fileName) {
+function resetUploadZone() {
   const zone = document.getElementById('uploadZone');
-  const name = fileName || 'Resume';
+  if (!zone) return;
   zone.innerHTML = `
-    <div class="icon" style="color: #059669;">&#9989;</div>
-    <div class="text" style="color: #059669; font-weight: 600;">${escapeHTML(name)}</div>
-    <div class="hint">Resume loaded. Click or drag to upload a different one.</div>
+    <span class="upload-zone-icon material-symbols-outlined">upload</span>
+    <span class="upload-zone-text">Upload New</span>
+    <span class="upload-zone-hint">PDF or DOCX</span>
   `;
+}
+
+/**
+ * Opens a modal to preview the raw text of a stored resume.
+ * @param {number} idx - Index into the resumes array in storage.
+ */
+async function previewResume(idx) {
+  const result = await chrome.storage.local.get('resumes');
+  const resumes = result.resumes || [];
+  const resume = resumes[idx];
+  if (!resume || !resume.text) {
+    showToast('No preview available for this resume.', 'error');
+    return;
+  }
+
+  // Create or reuse the preview modal
+  let modal = document.getElementById('resumePreviewModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'resumePreviewModal';
+    modal.className = 'resume-preview-modal';
+    modal.innerHTML = `
+      <div class="resume-preview-backdrop"></div>
+      <div class="resume-preview-content">
+        <div class="resume-preview-header">
+          <h3 class="resume-preview-title"></h3>
+          <button class="resume-preview-close" title="Close">&times;</button>
+        </div>
+        <pre class="resume-preview-text"></pre>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelector('.resume-preview-backdrop').addEventListener('click', () => { modal.style.display = 'none'; });
+    modal.querySelector('.resume-preview-close').addEventListener('click', () => { modal.style.display = 'none'; });
+  }
+
+  modal.querySelector('.resume-preview-title').textContent = resume.fileName || 'Resume Preview';
+  modal.querySelector('.resume-preview-text').textContent = resume.text;
+  modal.style.display = 'flex';
 }
 
 // ─── Tab switching ────────────────────────────────────────────────────────────
@@ -160,41 +198,63 @@ function showResumeLoaded(fileName) {
  * Activating a tab deactivates all others and shows the matching `.tab-content`
  * panel.  Lazy-loads data for the 'applied' and 'stats' tabs on first reveal.
  */
+const _headerTitle = document.querySelector('.top-header-title');
+const _floatingSaveBar = document.getElementById('floatingSaveBar');
+
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
-    // Deactivate all tabs and panels
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => {
+      t.classList.remove('active');
+      t.setAttribute('aria-selected', 'false');
+    });
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     tab.classList.add('active');
-    // Show the corresponding panel; panel IDs follow the convention "tab-<name>"
+    tab.setAttribute('aria-selected', 'true');
     document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
-    // Refresh data-heavy tabs every time they become visible
     if (tab.dataset.tab === 'applied') loadAppliedJobs();
+    // Show Save Profile bar only on User Context tab
+    if (_floatingSaveBar) {
+      _floatingSaveBar.style.display = tab.dataset.tab === 'profile' ? '' : 'none';
+    }
+    // Update the top header to reflect the active section.
+    // Extract the text node after the icon span (tab has: <span.icon> + text node).
+    if (_headerTitle) {
+      const textNode = Array.from(tab.childNodes).find(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
+      _headerTitle.textContent = textNode ? textNode.textContent.trim() : tab.textContent.trim();
+    }
   });
 });
 
 // ─── Resume upload ────────────────────────────────────────────────────────────
 
 /** DOM references kept at module scope so multiple listeners can share them. */
-const uploadZone = document.getElementById('uploadZone');
-const fileInput  = document.getElementById('fileInput');
+const fileInput = document.getElementById('fileInput');
 
-// Clicking anywhere in the drop zone opens the OS file picker
-uploadZone.addEventListener('click', () => fileInput.click());
+// Delegate drag/drop/click to the stable container element so that events
+// survive renderResumeCards() replacing the inner uploadZone HTML.
+const resumeCardsCont = document.getElementById('resumeCardsContainer');
 
-// Drag-over: prevent default to allow the drop event and add visual feedback
-uploadZone.addEventListener('dragover', (e) => {
-  e.preventDefault();
-  uploadZone.classList.add('drag-over');
+resumeCardsCont.addEventListener('click', (e) => {
+  if (e.target.closest('#uploadZone')) fileInput.click();
 });
 
-// Drag-leave: remove visual feedback when the dragged item leaves the zone
-uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
-
-// Drop: extract the first dropped file and process it
-uploadZone.addEventListener('drop', (e) => {
+resumeCardsCont.addEventListener('dragover', (e) => {
+  const zone = e.target.closest('#uploadZone');
+  if (!zone) return;
   e.preventDefault();
-  uploadZone.classList.remove('drag-over');
+  zone.classList.add('drag-over');
+});
+
+resumeCardsCont.addEventListener('dragleave', (e) => {
+  const zone = e.target.closest('#uploadZone');
+  if (zone) zone.classList.remove('drag-over');
+});
+
+resumeCardsCont.addEventListener('drop', (e) => {
+  const zone = e.target.closest('#uploadZone');
+  if (!zone) return;
+  e.preventDefault();
+  zone.classList.remove('drag-over');
   if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
 });
 
@@ -235,36 +295,65 @@ async function handleFile(file) {
       return;
     }
 
-    setUploadStatus('Parsing resume with AI... This may take a moment.', 'loading');
+    // Check if we already parsed this exact file (same name + similar length)
+    const stored = await chrome.storage.local.get('resumes');
+    const existingResumes = stored.resumes || [];
+    const alreadyParsed = existingResumes.find(
+      r => r.fileName === file.name && r.text && Math.abs(r.text.length - rawText.substring(0, 50000).length) < 100
+    );
 
-    // Hand off raw text to the background script which calls the configured AI provider
-    const parsed = await sendMessage({ type: 'PARSE_RESUME', rawText });
+    let parsed;
+    if (alreadyParsed && alreadyParsed.parsedData) {
+      // Reuse cached parse result — no AI call needed
+      parsed = alreadyParsed.parsedData;
+      setUploadStatus('Resume loaded from cache (already parsed).', 'success');
+    } else {
+      setUploadStatus('Parsing resume with AI... This may take a moment.', 'loading');
+      // Hand off raw text to the background script which calls the configured AI provider
+      parsed = await sendMessage({ type: 'PARSE_RESUME', rawText });
+    }
+
     // Merge parsed fields into existing profileData while preserving any extra keys
     // (e.g. resumeFileName from a previous save) and stamp the new file name
     profileData = { ...profileData, ...parsed, resumeFileName: file.name };
     populateProfileForm();
-    showResumeLoaded(file.name);
-    setUploadStatus('Resume parsed successfully! Review and edit below.', 'success');
-    markProfileDirty();
+    if (!alreadyParsed || !alreadyParsed.parsedData) {
+      setUploadStatus('Resume parsed successfully! Review and edit below.', 'success');
+    }
 
     // Add to resumes array (new card system, max 10)
-    const stored = await chrome.storage.local.get('resumes');
-    const resumes = stored.resumes || [];
+    const resumes = existingResumes;
     const isFirst = resumes.length === 0;
-    if (resumes.length >= 10) {
-      // Remove the oldest non-primary resume
-      const removeIdx = resumes.findIndex(r => !r.isPrimary);
-      if (removeIdx >= 0) resumes.splice(removeIdx, 1);
+    // Only add if this file isn't already in the list
+    const alreadyInList = resumes.findIndex(r => r.fileName === file.name && Math.abs((r.text || '').length - rawText.substring(0, 50000).length) < 100);
+    if (alreadyInList >= 0) {
+      // Update the existing entry with parsed data cache
+      resumes[alreadyInList].parsedData = parsed;
+    } else {
+      if (resumes.length >= 10) {
+        const removeIdx = resumes.findIndex(r => !r.isPrimary);
+        if (removeIdx >= 0) resumes.splice(removeIdx, 1);
+      }
+      resumes.push({
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        fileName: file.name,
+        text: rawText.substring(0, 50000),
+        uploadDate: new Date().toISOString(),
+        isPrimary: isFirst,
+        parsedData: parsed
+      });
     }
-    resumes.push({
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      fileName: file.name,
-      text: rawText.substring(0, 50000), // cap stored text
-      uploadDate: new Date().toISOString(),
-      isPrimary: isFirst
-    });
     await chrome.storage.local.set({ resumes });
     renderResumeCards();
+
+    // Auto-save profile so parsed data persists without manual Save click
+    try {
+      await sendMessage({ type: 'SAVE_PROFILE', profile: profileData });
+      markProfileClean();
+      showToast('Profile saved automatically after parsing.', 'success');
+    } catch (_) {
+      // Manual save still available via button
+    }
 
     // Also prefill intake context from the newly parsed resume
     prefillFromProfile(profileData);
@@ -639,11 +728,11 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
 
   // ── Basic validation (only if fields are filled in) ──
   if (profileData.email && (!/[@]/.test(profileData.email) || !/[.]/.test(profileData.email))) {
-    showToast('Please enter a valid email address');
+    showToast('Please enter a valid email address', 'error');
     return;
   }
   if (profileData.phone && (profileData.phone.replace(/\D/g, '').length < 10)) {
-    showToast('Please enter a valid phone number');
+    showToast('Please enter a valid phone number', 'error');
     return;
   }
 
@@ -654,9 +743,9 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
     await chrome.storage.local.set({ profileSlots });
     updateSlotButtons();
     markProfileClean();
-    showToast('Profile saved!');
+    showToast('Profile saved!', 'success');
   } catch (err) {
-    showToast('Error saving: ' + err.message);
+    showToast('Error saving: ' + err.message, 'error');
   }
 });
 
@@ -676,7 +765,7 @@ const INTAKE_SECTIONS = [
     id: 'career-goals',
     title: 'Career Goals',
     description: 'Help us understand what you\'re looking for so we can tailor your applications.',
-    icon: '&#9733;',
+    icon: '<span class="material-symbols-outlined">star</span>',
     required: true,
     questions: [
       { id: 'target_roles', text: 'What kind of roles are you targeting?', type: 'textarea', hint: 'e.g., Product Manager, Software Engineer, Data Scientist', required: true },
@@ -690,7 +779,7 @@ const INTAKE_SECTIONS = [
     id: 'professional-summary',
     title: 'Professional Summary',
     description: 'A quick snapshot of who you are professionally.',
-    icon: '&#128188;',
+    icon: '<span class="material-symbols-outlined">work</span>',
     required: true,
     questions: [
       { id: 'elevator_pitch', text: 'Give me a 2-3 sentence elevator pitch about yourself.', type: 'textarea', hint: 'How would you introduce yourself at a networking event?', required: true },
@@ -703,7 +792,7 @@ const INTAKE_SECTIONS = [
     id: 'experience-highlights',
     title: 'Experience Highlights',
     description: 'Tell us about your most impactful work.',
-    icon: '&#128640;',
+    icon: '<span class="material-symbols-outlined">rocket_launch</span>',
     required: true,
     questions: [
       { id: 'recent_role', text: 'Tell me about your most recent role — what did you do, and what was the impact?', type: 'textarea', required: true },
@@ -716,7 +805,7 @@ const INTAKE_SECTIONS = [
     id: 'education',
     title: 'Education',
     description: 'Your academic background and certifications.',
-    icon: '&#127891;',
+    icon: '<span class="material-symbols-outlined">school</span>',
     required: true,
     questions: [
       { id: 'highest_education', text: 'What\'s your highest level of education?', type: 'select', options: ['', 'High School Diploma / GED', 'Some College (no degree)', "Associate's Degree", "Bachelor's Degree (BA/BS)", "Master's Degree (MA/MS/MBA)", 'Doctorate (PhD/EdD)', 'Professional Degree (JD/MD/DDS)'], required: true },
@@ -729,7 +818,7 @@ const INTAKE_SECTIONS = [
     id: 'work-preferences',
     title: 'Work Preferences',
     description: 'Salary, location, authorization — the practical details applications ask about.',
-    icon: '&#9881;',
+    icon: '<span class="material-symbols-outlined">settings</span>',
     required: false,
     questions: [
       { id: 'desired_salary', text: 'Desired annual salary (USD)', type: 'text', hint: 'e.g., $120,000 or $100k-130k' },
@@ -754,7 +843,7 @@ const INTAKE_SECTIONS = [
     id: 'personal-details',
     title: 'Personal Details',
     description: 'Basic contact info and optional demographics that applications commonly ask for.',
-    icon: '&#128100;',
+    icon: '<span class="material-symbols-outlined">person</span>',
     required: false,
     questions: [
       { id: 'first_name', text: 'First Name', type: 'text' },
@@ -790,7 +879,7 @@ const INTAKE_SECTIONS = [
     id: 'text-dumps',
     title: 'Text Dumps',
     description: 'Paste your resume, LinkedIn About, cover letter, or any text that describes your experience.',
-    icon: '&#128203;',
+    icon: '<span class="material-symbols-outlined">assignment</span>',
     required: false,
     questions: [] // Special section — rendered separately
   }
@@ -890,7 +979,7 @@ function renderIntakeSidebar() {
     const div = document.createElement('div');
     div.className = 'intake-sidebar-item' + (active ? ' active' : '') + (complete ? ' complete' : '');
     div.innerHTML = `
-      <div class="intake-sidebar-icon">${complete ? '&#10003;' : section.icon}</div>
+      <div class="intake-sidebar-icon">${complete ? '<span class="material-symbols-outlined">check</span>' : section.icon}</div>
       <div>
         <div style="font-size:13px;">${escapeHTML(section.title)}</div>
         ${section.required ? '<div style="font-size:10px;color:var(--ac-text-muted);">Required</div>' : ''}
@@ -908,7 +997,7 @@ function renderIntakeSidebar() {
   // Review & Finish button at the bottom
   const reviewBtn = document.createElement('div');
   reviewBtn.className = 'intake-sidebar-item' + (intakeViewMode === 'review' ? ' active' : '');
-  reviewBtn.innerHTML = `<div class="intake-sidebar-icon">&#128220;</div><div style="font-size:13px;">Review & Finish</div>`;
+  reviewBtn.innerHTML = `<div class="intake-sidebar-icon"><span class="material-symbols-outlined">rate_review</span></div><div style="font-size:13px;">Review & Finish</div>`;
   reviewBtn.addEventListener('click', () => {
     intakeViewMode = 'review';
     renderIntakeFlow();
@@ -1190,9 +1279,9 @@ function renderIntakeReview() {
     try {
       applicantContext.completedAt = new Date().toISOString();
       await sendMessage({ type: 'SAVE_APPLICANT_CONTEXT', applicantContext });
-      showToast('Applicant context saved!');
+      showToast('Applicant context saved!', 'success');
     } catch (err) {
-      showToast('Error saving: ' + err.message);
+      showToast('Error saving: ' + err.message, 'error');
     }
   });
 }
@@ -1334,7 +1423,7 @@ function renderPromptSections(data) {
     section.dataset.key = key;
     section.innerHTML = `
       <div class="prompt-section-header">
-        <span class="prompt-section-arrow">&#9654;</span>
+        <span class="prompt-section-arrow"><span class="material-symbols-outlined" style="font-size:16px;">chevron_right</span></span>
         <span class="prompt-section-name">${label}</span>
         <span class="prompt-section-badge ${isDefault ? '' : 'visible'}">Modified</span>
       </div>
@@ -1360,7 +1449,7 @@ function renderPromptSections(data) {
         textarea.value = result.defaultValue;
         data.prompts[key] = result.defaultValue;
         section.querySelector('.prompt-section-badge').classList.remove('visible');
-        showToast('Prompt reset to default');
+        showToast('Prompt reset to default', 'info');
       }
     });
 
@@ -1395,7 +1484,7 @@ document.getElementById('resetAllPromptsBtn')?.addEventListener('click', async (
   // Reload prompt sections from defaults
   const data = await sendMessage({ type: 'GET_CUSTOM_PROMPTS' });
   renderPromptSections(data);
-  showToast('All prompts reset to defaults');
+  showToast('All prompts reset to defaults', 'info');
 });
 
 // ─── Provider UI ──────────────────────────────────────────────────────────────
@@ -1552,7 +1641,7 @@ document.getElementById('testConnBtn').addEventListener('click', async () => {
 document.getElementById('saveSettingsBtn').addEventListener('click', async () => {
   await saveSettings();
   await saveCustomPrompts();
-  showToast('Settings & prompts saved!');
+  showToast('Settings & prompts saved!', 'success');
 });
 
 /**
@@ -1755,9 +1844,7 @@ async function init() {
     if (profile) {
       profileData = profile;
       populateProfileForm();
-      // Show the name / file name in the upload zone so users know a resume is loaded
-      const displayName = profile.resumeFileName || profile.name || 'Resume';
-      showResumeLoaded(displayName);
+      // Resume cards handle showing which resume is loaded
     }
 
     // Load applicant context (new intake flow) or migrate from old qaList
@@ -1768,7 +1855,7 @@ async function init() {
       qaList = qa;
       if (migrateFromQAList(qa)) {
         sendMessage({ type: 'SAVE_APPLICANT_CONTEXT', applicantContext }).catch(() => {});
-        showToast('Imported your existing Q&A answers into the new intake flow.');
+        showToast('Imported your existing Q&A answers into the new intake flow.', 'info');
       }
     }
 
@@ -1907,149 +1994,237 @@ function wireJobFilters() {
  * @param {Array<Object>} jobs
  */
 /**
- * Builds an SVG score ring for a job card.
+ * Builds a score ring element (HTML string) for a job card.
+ * Uses a positioned overlay for the text so it's always centered.
  * @param {number} score - 0-100 match score
- * @param {number} size - SVG size in px (default 64)
- * @returns {string} SVG markup
+ * @returns {string} HTML markup
  */
-function buildScoreRingSVG(score, size = 64) {
-  const radius = (size - 8) / 2;
+function buildScoreRingHTML(score) {
+  const size = 64;
+  const strokeW = 5;
+  const radius = (size - strokeW * 2) / 2;
   const circumference = 2 * Math.PI * radius;
-  const pct = Math.max(0, Math.min(100, score || 0));
+  const cx = size / 2, cy = size / 2;
+
+  // No score yet — show neutral dash ring
+  if (score == null || score === 0) {
+    return `
+    <div class="myjobs-score-ring">
+      <svg viewBox="0 0 ${size} ${size}" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="${cx}" cy="${cy}" r="${radius}" stroke="#e8ede7" stroke-width="${strokeW}"/>
+      </svg>
+      <div class="myjobs-score-inner">
+        <span class="myjobs-score-pct" style="color:#9ca3af">—</span>
+        <span class="myjobs-score-label" style="color:#9ca3af">Score</span>
+      </div>
+    </div>`;
+  }
+
+  const pct = Math.max(1, Math.min(100, score));
   const offset = circumference - (pct / 100) * circumference;
   const color = pct >= 70 ? '#22c55e' : pct >= 45 ? '#f59e0b' : '#ef4444';
-  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex-shrink:0;">
-    <circle cx="${size/2}" cy="${size/2}" r="${radius}" fill="none" stroke="#e2e8f0" stroke-width="4"/>
-    <circle cx="${size/2}" cy="${size/2}" r="${radius}" fill="none" stroke="${color}" stroke-width="4"
-      stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"
-      stroke-linecap="round" transform="rotate(-90 ${size/2} ${size/2})"/>
-    <text x="50%" y="50%" text-anchor="middle" dominant-baseline="central"
-      font-size="14" font-weight="700" fill="${color}">${pct}</text>
-  </svg>`;
+  return `
+    <div class="myjobs-score-ring">
+      <svg viewBox="0 0 ${size} ${size}" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="${cx}" cy="${cy}" r="${radius}" stroke="#e8ede7" stroke-width="${strokeW}"/>
+        <circle cx="${cx}" cy="${cy}" r="${radius}" stroke="${color}" stroke-width="${strokeW}"
+          stroke-dasharray="${circumference.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}"
+          stroke-linecap="round" transform="rotate(-90 ${cx} ${cy})"/>
+      </svg>
+      <div class="myjobs-score-inner">
+        <span class="myjobs-score-pct" style="color:${color}">${pct}%</span>
+        <span class="myjobs-score-label" style="color:${color}">Match</span>
+      </div>
+    </div>`;
 }
 
+// Keep old name as alias for any legacy call sites
+function buildScoreRingSVG(score) { return buildScoreRingHTML(score); }
+
 /**
- * Renders the My Jobs tracker as card-based layout (Stitch redesign).
- * Each card has: score ring, title/company/date, JD toggle, status dropdown,
- * prep button, delete button.
+ * Renders the My Jobs tracker — single-row card layout matching the Stitch mockup.
+ * Layout: score ring | title + meta | View JD | status pill | Prep | delete
  * @param {Array<Object>} jobs
  */
 function renderAppliedJobs(jobs) {
   const container = document.getElementById('appliedJobsList');
   const countEl   = document.getElementById('appliedCount');
 
+  // Update filter counts on every render
+  updateFilterCounts(_allJobs);
+
   if (!jobs.length) {
-    container.innerHTML = '<div class="applied-empty">No jobs tracked yet. Use the side panel on a job posting to save or apply to jobs.</div>';
+    const isFiltered = _allJobs.length > 0;
+    container.innerHTML = isFiltered
+      ? `<div class="applied-empty">
+           <div class="applied-empty-icon"><span class="material-symbols-outlined" style="font-size:48px;">search</span></div>
+           <div class="applied-empty-title">No matches</div>
+           <p>No jobs with this status. Try a different filter.</p>
+         </div>`
+      : `<div class="applied-empty">
+           <div class="applied-empty-icon"><span class="material-symbols-outlined" style="font-size:48px;">work</span></div>
+           <div class="applied-empty-title">No jobs tracked yet</div>
+           <p>Open any job listing and click "Save Job" in the Copilot panel to start tracking your pipeline.</p>
+         </div>`;
     if (countEl) countEl.textContent = '';
     return;
   }
 
-  const applied = jobs.filter(j => j.status && j.status !== 'saved').length;
-  if (countEl) countEl.textContent = jobs.length + ' job' + (jobs.length === 1 ? '' : 's') + (applied > 0 ? ` (${applied} applied)` : '');
+  const notSaved = jobs.filter(j => j.status && j.status !== 'saved').length;
+  if (countEl) countEl.textContent = jobs.length + ' Jobs' + (notSaved > 0 ? ` (${notSaved} applied)` : '');
 
   const statusOptions = ['saved', 'applied', 'interview', 'offer', 'rejected', 'withdrawn'];
-  const statusLabels = { saved: 'Saved', applied: 'Applied', interview: 'Interview', offer: 'Offer', rejected: 'Rejected', withdrawn: 'Withdrawn' };
-  const statusColors = { saved: '#94a3b8', applied: '#3b82f6', interview: '#8b5cf6', offer: '#22c55e', rejected: '#ef4444', withdrawn: '#6b7280' };
+  const statusLabels  = { saved: 'Saved', applied: 'Applied', interview: 'Interview', offer: 'Offer', rejected: 'Rejected', withdrawn: 'Withdrawn' };
+
+  function statusPill(jobId, current) {
+    let sel = `<div class="myjobs-status-wrap"><select class="myjobs-status-pill status-${current}" data-id="${escapeAttr(jobId)}">`;
+    for (const s of statusOptions) {
+      sel += `<option value="${s}"${s === current ? ' selected' : ''}>${statusLabels[s]}</option>`;
+    }
+    return sel + '</select></div>';
+  }
+
+  function formatDate(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d)) return dateStr;
+    const diff = Math.floor((Date.now() - d) / 86400000);
+    if (diff === 0) return 'Today';
+    if (diff === 1) return 'Yesterday';
+    if (diff < 7) return diff + ' days ago';
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
 
   let html = '<div class="myjobs-cards">';
 
   for (const job of jobs) {
-    const title   = escapeHTML(job.title   || 'Unknown');
-    const company = escapeHTML(job.company || '');
-    const date    = escapeHTML(job.statusDate || job.date || '');
-    const url     = escapeAttr(job.url     || '#');
+    const id      = escapeAttr(job.id);
+    const title   = escapeHTML(job.title || 'Unknown Role');
+    const company = escapeHTML(job.company || 'Unknown Company');
+    const dateStr = formatDate(job.statusDate || job.date || '');
+    const url     = escapeAttr(job.url || '#');
+    const hasURL  = job.url && job.url !== '#';
     const status  = job.status || 'saved';
     const hasJD   = !!(job.jdText && job.jdText.length > 50);
-    const sColor  = statusColors[status] || '#94a3b8';
-
-    // Status dropdown
-    let statusSelect = `<select class="myjobs-status-select" style="border-color:${sColor};color:${sColor};" data-id="${escapeAttr(job.id)}">`;
-    for (const s of statusOptions) {
-      statusSelect += `<option value="${s}" ${s === status ? 'selected' : ''}>${statusLabels[s]}</option>`;
-    }
-    statusSelect += '</select>';
 
     html += `
-    <div class="myjobs-card" data-job-id="${escapeAttr(job.id)}">
-      <div class="myjobs-card-top">
-        <div class="myjobs-card-score">${buildScoreRingSVG(job.score || 0)}</div>
+    <div class="myjobs-card" data-job-id="${id}">
+      <div class="myjobs-card-row">
+        ${buildScoreRingHTML(job.score)}
         <div class="myjobs-card-info">
-          <a class="myjobs-card-title" href="${url}" target="_blank" rel="noopener">${title}</a>
-          <div class="myjobs-card-meta">${company}${date ? ' &middot; ' + date : ''}</div>
+          ${hasURL
+            ? `<a class="myjobs-card-title" href="${url}" target="_blank" rel="noopener">${title}<span class="myjobs-title-icon material-symbols-outlined" style="font-size:14px;">open_in_new</span></a>`
+            : `<span class="myjobs-card-title">${title}</span>`
+          }
+          <div class="myjobs-card-meta">
+            <span class="myjobs-meta-item"><span class="myjobs-meta-icon material-symbols-outlined" style="font-size:14px;">business</span>${company}</span>
+            ${dateStr ? `<span class="myjobs-meta-item"><span class="myjobs-meta-icon material-symbols-outlined" style="font-size:14px;">schedule</span>${dateStr}</span>` : ''}
+          </div>
+        </div>
+        <div class="myjobs-card-actions">
+          ${hasJD ? `<button class="myjobs-jd-btn" data-id="${id}" aria-expanded="false" aria-controls="jd-preview-${id}">View JD <span class="material-symbols-outlined" style="font-size:14px;">expand_more</span></button>` : ''}
+          ${statusPill(job.id, status)}
+          <button class="myjobs-prep-btn" data-id="${id}" data-url="${url}" aria-label="Prep for ${title}"><span class="material-symbols-outlined" style="font-size:16px;">bolt</span> Prep</button>
+          <button class="myjobs-delete-btn" data-id="${id}" data-title="${escapeHTML(title)}" aria-label="Remove ${title}"><span class="material-symbols-outlined" style="font-size:16px;">delete</span></button>
         </div>
       </div>
-      <div class="myjobs-card-actions">
-        ${hasJD ? `<button class="btn btn-sm myjobs-jd-toggle" data-id="${escapeAttr(job.id)}">View JD</button>` : ''}
-        ${statusSelect}
-        <button class="btn btn-sm myjobs-prep-btn" style="background:linear-gradient(135deg,#6b8f71,#9ab89e);color:#fff;border:none;" data-id="${escapeAttr(job.id)}" data-url="${escapeAttr(job.url || '')}">Prep</button>
-        <button class="btn btn-sm btn-danger delete-applied" data-id="${escapeAttr(job.id)}" title="Delete">&#10005;</button>
-      </div>
-      ${hasJD ? `<div class="myjobs-jd-preview" id="jd-preview-${escapeAttr(job.id)}" style="display:none;"><div class="myjobs-jd-content">${escapeHTML(job.jdText)}</div></div>` : ''}
+      ${hasJD ? `<div class="myjobs-jd-preview" id="jd-preview-${id}" style="display:none;"><div class="myjobs-jd-content">${escapeHTML(job.jdText)}</div></div>` : ''}
     </div>`;
   }
 
   html += '</div>';
   container.innerHTML = html;
 
-  // Wire status dropdowns
-  container.querySelectorAll('.myjobs-status-select').forEach(select => {
+  // Wire status pill selects
+  container.querySelectorAll('.myjobs-status-pill').forEach(select => {
     select.addEventListener('change', async () => {
-      const jobId = select.dataset.id;
+      const jobId     = select.dataset.id;
       const newStatus = select.value;
       try {
         await sendMessage({ type: 'UPDATE_JOB_STATUS', jobId, status: newStatus });
-        const c = statusColors[newStatus] || '#94a3b8';
-        select.style.borderColor = c;
-        select.style.color = c;
-        showToast('Status updated to ' + newStatus);
+        select.className = `myjobs-status-pill status-${newStatus}`;
+        showToast('Status: ' + (statusLabels[newStatus] || newStatus), 'success');
         const job = _allJobs.find(j => j.id === jobId);
-        if (job) {
-          job.status = newStatus;
-          job.statusDate = new Date().toISOString().split('T')[0];
-        }
+        if (job) { job.status = newStatus; job.statusDate = new Date().toISOString().split('T')[0]; }
+        updateFilterCounts(_allJobs);
       } catch (err) {
-        showToast('Error: ' + err.message);
+        showToast('Error: ' + err.message, 'error');
       }
     });
   });
 
-  // Wire JD preview toggles
-  container.querySelectorAll('.myjobs-jd-toggle').forEach(btn => {
+  // Wire JD toggles
+  container.querySelectorAll('.myjobs-jd-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const preview = document.getElementById('jd-preview-' + btn.dataset.id);
-      if (preview) {
-        const visible = preview.style.display !== 'none';
-        preview.style.display = visible ? 'none' : 'block';
-        btn.textContent = visible ? 'View JD' : 'Hide JD';
-      }
+      if (!preview) return;
+      const open = preview.style.display !== 'none';
+      preview.style.display = open ? 'none' : 'block';
+      btn.innerHTML = open ? 'View JD <span class="material-symbols-outlined" style="font-size:14px;">expand_more</span>' : 'Hide JD <span class="material-symbols-outlined" style="font-size:14px;">expand_less</span>';
+      btn.setAttribute('aria-expanded', String(!open));
     });
   });
 
-  // Wire delete buttons
-  container.querySelectorAll('.delete-applied').forEach(btn => {
+  // Wire delete — two-step: first click shows confirm, second click deletes
+  container.querySelectorAll('.myjobs-delete-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
-      try {
-        await sendMessage({ type: 'DELETE_JOB', jobId: btn.dataset.id });
-        _allJobs = _allJobs.filter(j => j.id !== btn.dataset.id);
-        showToast('Job removed.');
-        loadAppliedJobs();
-      } catch (err) {
-        showToast('Error: ' + err.message);
+      if (btn.dataset.confirming === 'true') {
+        // Second click: confirmed, do the delete
+        btn.dataset.confirming = 'false';
+        btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px;">delete</span>';
+        btn.removeAttribute('aria-label');
+        btn.setAttribute('aria-label', 'Remove ' + (btn.dataset.title || 'job'));
+        try {
+          await sendMessage({ type: 'DELETE_JOB', jobId: btn.dataset.id });
+          _allJobs = _allJobs.filter(j => j.id !== btn.dataset.id);
+          showToast('Job removed.', 'success');
+          loadAppliedJobs();
+        } catch (err) {
+          showToast('Error: ' + err.message, 'error');
+        }
+      } else {
+        // First click: ask for confirmation
+        btn.dataset.confirming = 'true';
+        btn.textContent = 'Delete?';
+        btn.setAttribute('aria-label', 'Confirm delete');
+        // Auto-cancel after 3s if user doesn't confirm
+        setTimeout(() => {
+          if (btn.dataset.confirming === 'true') {
+            btn.dataset.confirming = 'false';
+            btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px;">delete</span>';
+            btn.setAttribute('aria-label', 'Remove ' + (btn.dataset.title || 'job'));
+          }
+        }, 3000);
       }
     });
   });
 
-  // Wire Prep buttons
+  // Wire prep
   container.querySelectorAll('.myjobs-prep-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', () => {
       const url = btn.dataset.url;
       if (url && url !== '#') {
         window.open(url, '_blank');
-        showToast('Opening job page for interview prep...');
       } else {
-        showToast('No job URL available for this entry.');
+        showToast('No job URL available for this entry.', 'error');
       }
     });
+  });
+}
+
+/**
+ * Updates filter pill counts from the full jobs array.
+ */
+function updateFilterCounts(allJobs) {
+  const counts = { all: allJobs.length, saved: 0, applied: 0, interview: 0, offer: 0, rejected: 0, withdrawn: 0 };
+  allJobs.forEach(j => { const s = j.status || 'saved'; if (counts[s] !== undefined) counts[s]++; });
+  document.querySelectorAll('.myjobs-filter').forEach(btn => {
+    const f = btn.dataset.filter;
+    const countEl = btn.querySelector('.myjobs-filter-count');
+    if (countEl && counts[f] !== undefined) {
+      countEl.textContent = counts[f];
+      countEl.style.display = counts[f] > 0 ? '' : 'none';
+    }
   });
 }
 
@@ -2118,40 +2293,36 @@ async function renderResumeCards() {
   let html = '';
   resumes.forEach((r, i) => {
     const isPrimary = r.isPrimary === true;
-    const borderStyle = isPrimary ? 'border:2px solid #6b8f71;' : 'border:1px solid var(--ac-border);';
-    const badge = isPrimary ? '<span style="background:#6b8f71;color:#fff;font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;margin-left:8px;">PRIMARY</span>' : '';
+    const activeClass = isPrimary ? ' active' : '';
+    const badge = isPrimary ? '<span class="primary-badge">Primary</span>' : '';
     const date = r.uploadDate ? new Date(r.uploadDate).toLocaleDateString() : '';
+    const fname = escapeHTML(r.fileName || 'Resume ' + (i + 1));
+    const deleteBtn = !isPrimary ? `<button class="resume-card-delete" data-resume-idx="${i}" aria-label="Delete ${fname}"><span class="material-symbols-outlined" style="font-size:16px;">close</span></button>` : '';
+    const hasText = !!(r.text && r.text.length > 20);
     html += `
-    <div class="resume-card" style="${borderStyle}border-radius:8px;padding:12px;background:var(--ac-card-bg);cursor:pointer;" data-resume-idx="${i}">
-      <div style="display:flex;align-items:center;justify-content:space-between;">
-        <div>
-          <div style="font-weight:600;font-size:14px;">${escapeHTML(r.fileName || 'Resume ' + (i+1))}${badge}</div>
-          <div style="font-size:11px;color:var(--ac-text-muted);">${date}</div>
-        </div>
-        <button class="btn btn-danger btn-sm resume-card-delete" data-resume-idx="${i}" title="Delete" style="font-size:12px;padding:2px 8px;">&#10005;</button>
-      </div>
+    <div class="resume-card${activeClass}" data-resume-idx="${i}" role="button" tabindex="0"
+         aria-label="${fname}${isPrimary ? ' (primary)' : ''} — click to set as primary">
+      ${badge}
+      ${deleteBtn}
+      <div class="resume-card-icon material-symbols-outlined" aria-hidden="true">description</div>
+      <div class="resume-card-name">${fname}</div>
+      <div class="resume-card-date">${date}</div>
+      ${hasText ? `<button class="resume-card-preview" data-resume-idx="${i}" aria-label="Preview ${fname}">Preview</button>` : ''}
     </div>`;
   });
 
-  // Preserve upload zone before overwriting container
-  const uploadZoneEl = document.getElementById('uploadZone');
-  const uploadZoneClone = uploadZoneEl ? uploadZoneEl.cloneNode(true) : null;
+  // Build a fresh upload zone (always clean "Upload New" state)
+  html += `
+    <div class="upload-zone" id="uploadZone">
+      <span class="upload-zone-icon material-symbols-outlined">upload</span>
+      <span class="upload-zone-text">Upload New</span>
+      <span class="upload-zone-hint">PDF or DOCX</span>
+    </div>`;
 
   container.innerHTML = html;
 
-  // Re-append upload zone (it was destroyed by innerHTML)
-  if (uploadZoneClone) {
-    container.appendChild(uploadZoneClone);
-    // Re-wire upload zone click/drag events
-    const newZone = container.querySelector('#uploadZone');
-    const newFileInput = document.getElementById('fileInput');
-    if (newZone && newFileInput) {
-      newZone.addEventListener('click', () => newFileInput.click());
-      newZone.addEventListener('dragover', e => { e.preventDefault(); newZone.classList.add('drag-over'); });
-      newZone.addEventListener('dragleave', () => newZone.classList.remove('drag-over'));
-      newZone.addEventListener('drop', e => { e.preventDefault(); newZone.classList.remove('drag-over'); if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]); });
-    }
-  }
+  // Upload zone events are handled by delegated listeners on resumeCardsCont (module scope).
+  // No per-render re-attachment needed.
 
   // Click to set as primary
   container.querySelectorAll('.resume-card').forEach(card => {
@@ -2165,10 +2336,9 @@ async function renderResumeCards() {
       // Update active profile's resumeFileName
       if (arr[idx]) {
         profileData.resumeFileName = arr[idx].fileName;
-        showResumeLoaded(arr[idx].fileName);
       }
       renderResumeCards();
-      showToast('Primary resume updated.');
+      showToast('Primary resume updated.', 'success');
     });
   });
 
@@ -2186,7 +2356,15 @@ async function renderResumeCards() {
       }
       await chrome.storage.local.set({ resumes: arr });
       renderResumeCards();
-      showToast('Resume deleted.');
+      showToast('Resume deleted.', 'success');
+    });
+  });
+
+  // Preview buttons
+  container.querySelectorAll('.resume-card-preview').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      previewResume(parseInt(btn.dataset.resumeIdx));
     });
   });
 }
@@ -2267,13 +2445,12 @@ document.querySelectorAll('.profile-slot-btn').forEach(btn => {
       // Slot has a resume — update only the resume fields on profileData
       profileData.resumeFileName = slotData.resumeFileName;
       profileData.resumeText = slotData.resumeText || null;
-      showResumeLoaded(slotData.resumeFileName);
     } else {
       // Slot is empty — clear resume fields, keep profile intact
       profileData.resumeFileName = null;
       profileData.resumeText = null;
       document.getElementById('uploadZone').innerHTML = `
-        <div class="icon">&#128196;</div>
+        <div class="icon"><span class="material-symbols-outlined">description</span></div>
         <div class="text">Drag & drop your resume or click to browse</div>
         <div class="hint">Supports PDF and DOCX</div>`;
     }
@@ -2285,7 +2462,7 @@ document.querySelectorAll('.profile-slot-btn').forEach(btn => {
       profile: profileData,  // always the same global profile
     });
     updateSlotButtons();
-    showToast(`Switched to ${slotNames[activeSlot]}.`);
+    showToast(`Switched to ${slotNames[activeSlot]}.`, 'info');
   });
 });
 
@@ -2299,7 +2476,7 @@ document.getElementById('saveSlotNameBtn').addEventListener('click', async () =>
   slotNames[activeSlot] = name;
   await chrome.storage.local.set({ slotNames });
   updateSlotButtons();
-  showToast('Profile renamed.');
+  showToast('Profile renamed.', 'success');
 });
 
 // ─── Stats dashboard ──────────────────────────────────────────────────────────
@@ -2557,6 +2734,9 @@ function handleHash() {
     if (tabBtn) tabBtn.classList.add('active');
     if (tabPanel) tabPanel.classList.add('active');
     if (hash === 'applied') loadAppliedJobs();
+    // Show Save Profile bar only on User Context tab
+    const saveBar = document.getElementById('floatingSaveBar');
+    if (saveBar) saveBar.style.display = hash === 'profile' ? '' : 'none';
   }
 }
 
@@ -2655,69 +2835,93 @@ const LONG_INTAKE_FIELDS = new Set([
 ]);
 
 /**
- * Initialises inline editing on all [data-intake-field] span elements.
- * Double-click replaces the span with an input/textarea; blur saves.
+ * Initialises inline editing on all .inline-editable containers.
+ * Single-click on .ie-display adds .editing to the container, showing the
+ * paired .ie-input. Blur on the input removes .editing and saves.
  */
 function initInlineEditing() {
-  // Only target display spans — NOT the .ie-input elements
-  document.querySelectorAll('.ie-display[data-intake-field], .wp-value[data-intake-field]').forEach(span => {
-    span.addEventListener('dblclick', () => {
-      const key = span.dataset.intakeField;
-      const parsed = parseIntakeFieldKey(key);
-      if (!parsed) return;
+  document.querySelectorAll('.inline-editable').forEach(container => {
+    const display = container.querySelector('.ie-display[data-intake-field]');
+    const input   = container.querySelector('.ie-input[data-intake-field]');
+    if (!display || !input) return;
 
-      const currentValue = getAnswer(parsed.sectionId, parsed.fieldId) || '';
-      const isLong = LONG_INTAKE_FIELDS.has(parsed.fieldId);
+    const key    = display.dataset.intakeField;
+    const parsed = parseIntakeFieldKey(key);
+    if (!parsed) return;
 
-      // Create the editor element
-      const editor = document.createElement(isLong ? 'textarea' : 'input');
-      editor.className = 'inline-edit-input';
-      if (!isLong) editor.type = 'text';
-      editor.value = currentValue;
-      if (isLong) editor.rows = 3;
-      editor.style.width = '100%';
-      editor.style.fontSize = 'inherit';
-      editor.style.fontFamily = 'inherit';
+    // Single-click on display span → enter edit mode
+    display.addEventListener('click', () => {
+      input.value = getAnswer(parsed.sectionId, parsed.fieldId) || '';
+      container.classList.add('editing');
+      input.focus();
+    });
 
-      // Replace span with editor
-      span.style.display = 'none';
-      span.parentNode.insertBefore(editor, span.nextSibling);
-      editor.focus();
+    // Save on blur (clicking away)
+    const commit = () => {
+      const newValue = input.value.trim();
+      setAnswer(parsed.sectionId, parsed.fieldId, newValue);
+      display.textContent = newValue;
+      container.classList.remove('editing');
+    };
 
-      // Save on blur
-      const commit = () => {
-        const newValue = editor.value.trim();
-        setAnswer(parsed.sectionId, parsed.fieldId, newValue);
-        span.textContent = newValue || 'Click to edit...';
-        span.style.display = '';
-        if (editor.parentNode) editor.parentNode.removeChild(editor);
-      };
+    input.addEventListener('blur', commit);
 
-      editor.addEventListener('blur', commit);
-      // Enter triggers blur for single-line inputs
-      if (!isLong) {
-        editor.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') { e.preventDefault(); editor.blur(); }
-        });
+    // Enter key commits for single-line inputs; Shift+Enter is newline in textareas
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (input.tagName === 'INPUT' || !e.shiftKey)) {
+        e.preventDefault();
+        input.blur();
       }
+      if (e.key === 'Escape') {
+        container.classList.remove('editing');
+      }
+    });
+  });
+
+  // Also wire .wp-value spans — uses the existing .wp-input in the same .work-pref-item,
+  // toggled via the .editing CSS class (mirrors the .inline-editable pattern exactly).
+  document.querySelectorAll('.work-pref-item').forEach(item => {
+    const span  = item.querySelector('.wp-value[data-intake-field]');
+    const input = item.querySelector('.wp-input[data-intake-field]');
+    if (!span || !input) return;
+
+    const key    = span.dataset.intakeField;
+    const parsed = parseIntakeFieldKey(key);
+    if (!parsed) return;
+
+    span.addEventListener('click', () => {
+      input.value = getAnswer(parsed.sectionId, parsed.fieldId) || '';
+      item.classList.add('editing');
+      input.focus();
+    });
+
+    const commit = () => {
+      const v = input.value.trim();
+      setAnswer(parsed.sectionId, parsed.fieldId, v);
+      span.textContent = v || '';
+      item.classList.remove('editing');
+    };
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { item.classList.remove('editing'); }
     });
   });
 }
 
 /**
- * Loads saved applicantContext values into all [data-intake-field] spans.
+ * Loads saved applicantContext values into all inline-editable display spans.
  */
 function loadInlineEditValues() {
-  // Only populate display spans — NOT inputs
   document.querySelectorAll('.ie-display[data-intake-field], .wp-value[data-intake-field]').forEach(span => {
-    const key = span.dataset.intakeField;
+    const key    = span.dataset.intakeField;
     const parsed = parseIntakeFieldKey(key);
     if (!parsed) return;
     const value = getAnswer(parsed.sectionId, parsed.fieldId);
     if (value && value.trim()) {
       span.textContent = value;
     }
-    // else leave the default placeholder text
   });
 }
 
@@ -2816,7 +3020,7 @@ authSignOutBtn?.addEventListener('click', async () => {
 });
 
 // Listen for auth state changes from background (after OAuth callback)
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'AUTH_STATE_CHANGED') {
     updateAuthUI();
     sendResponse({ success: true });

@@ -8,10 +8,13 @@
  * @returns {string} CSS text to inject into a <style> element.
  */
 export function getPanelCSS() {
-    // Font URL must be resolved at runtime inside Shadow DOM
+    // Font URLs must be resolved at runtime inside Shadow DOM
     const fontUrl = typeof chrome !== 'undefined' && chrome.runtime
       ? chrome.runtime.getURL('fonts/Manrope-Variable.woff2')
       : 'fonts/Manrope-Variable.woff2';
+    const iconFontUrl = typeof chrome !== 'undefined' && chrome.runtime
+      ? chrome.runtime.getURL('fonts/MaterialSymbolsOutlined.woff2')
+      : 'fonts/MaterialSymbolsOutlined.woff2';
 
     return `
       @font-face {
@@ -20,6 +23,30 @@ export function getPanelCSS() {
         font-weight: 200 800;
         font-style: normal;
         font-display: swap;
+      }
+      @font-face {
+        font-family: 'Material Symbols Outlined';
+        src: url('${iconFontUrl}') format('woff2');
+        font-weight: 100 700;
+        font-style: normal;
+        font-display: block;
+      }
+      .material-symbols-outlined {
+        font-family: 'Material Symbols Outlined';
+        font-weight: normal;
+        font-style: normal;
+        font-size: 20px;
+        line-height: 1;
+        letter-spacing: normal;
+        text-transform: none;
+        display: inline-block;
+        white-space: nowrap;
+        word-wrap: normal;
+        direction: ltr;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
+        font-feature-settings: 'liga';
       }
 
       * { margin: 0; padding: 0; box-sizing: border-box; }
