@@ -4,45 +4,55 @@ import { escapeHTML } from '../utils.js';
 import { scrollPanelTo } from '../panel/status.js';
 import { activateInterviewPrep } from './interview-prep.js';
 
+// ─── Status helpers ──────────────────────────────────────────
+
+const STATUS_LABELS = {
+  saved: 'Saved',
+  applied: 'Applied',
+  interview: 'Interview',
+  offer: 'Offer',
+  rejected: 'Rejected',
+  withdrawn: 'Withdrawn',
+};
+
+function getStatusBadgeHTML(job) {
+  const status = job.status || 'saved';
+  const label = STATUS_LABELS[status] || status;
+  let html = `<span class="jm-status-badge jm-status-${status}">${label}</span>`;
+  if (job.source === 'auto-detected') {
+    html += ` <span class="jm-status-auto">Auto-detected</span>`;
+  }
+  return html;
+}
+
 // ─── Saved Jobs tab ────────────────────────────────────────────
 
-/**
- * Activates the Saved tab: highlights the nav button, shows the saved
- * tab content, hides the main tab content, and fetches saved jobs.
- */
 export function activateSavedTab() {
   const shadowRoot = getShadowRoot();
   if (!shadowRoot) return;
-  // Highlight the Saved nav button
-  shadowRoot.querySelectorAll('.jm-nav-btn').forEach(btn => {
+  shadowRoot.querySelectorAll('.jm-bottom-nav-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.nav === 'saved');
   });
-  // Show saved tab, hide main tab
   const savedTab = shadowRoot.getElementById('jmSavedTab');
   const mainTab = shadowRoot.getElementById('jmMainTab');
+  const askAiTab = shadowRoot.getElementById('jmAskAiTab');
   if (savedTab) savedTab.classList.add('active');
   if (mainTab) mainTab.classList.remove('active');
-  // Fetch and render saved jobs each time the tab is activated
+  if (askAiTab) askAiTab.classList.remove('active');
   loadSavedJobs();
 }
 
-/**
- * Deactivates the Saved tab: removes nav highlight, hides saved tab,
- * and restores the main tab content.
- */
 export function deactivateSavedTab() {
   const shadowRoot = getShadowRoot();
   if (!shadowRoot) return;
   const savedTab = shadowRoot.getElementById('jmSavedTab');
   const mainTab = shadowRoot.getElementById('jmMainTab');
+  const interviewTab = shadowRoot.getElementById('jmInterviewPrepTab');
   if (savedTab) savedTab.classList.remove('active');
   if (mainTab) mainTab.classList.add('active');
+  if (interviewTab) interviewTab.classList.remove('active');
 }
 
-/**
- * Fetches saved jobs from background.js and renders them in the Saved tab.
- * @async
- */
 export async function loadSavedJobs() {
   const shadowRoot = getShadowRoot();
   if (!shadowRoot) return;
@@ -52,7 +62,6 @@ export async function loadSavedJobs() {
 
   try {
     const jobs = await sendMessage({ type: 'GET_SAVED_JOBS' });
-    // Clear previous cards (keep the empty message element)
     list.querySelectorAll('.jm-saved-card').forEach(c => c.remove());
 
     if (!jobs || jobs.length === 0) {
@@ -80,47 +89,38 @@ export async function loadSavedJobs() {
       company.className = 'jm-saved-company';
       company.textContent = job.company || 'Unknown Company';
 
-      // Meta row (score + date)
+      // Meta row (score + status + date)
       const meta = document.createElement('div');
       meta.className = 'jm-saved-meta';
 
+      // Score badge
       if (job.score != null && job.score !== 0) {
         const score = document.createElement('span');
         score.className = 'jm-saved-score';
         score.textContent = job.score + '%';
-        if (job.score >= 70) score.style.background = '#059669';
+        if (job.score >= 70) score.style.background = '#4f614d';
         else if (job.score >= 45) score.style.background = '#d97706';
         else score.style.background = '#dc2626';
         meta.appendChild(score);
       }
 
+      // Status badge
+      const statusEl = document.createElement('span');
+      statusEl.innerHTML = getStatusBadgeHTML(job);
+      meta.appendChild(statusEl);
+
+      // Date
       if (job.date) {
         const date = document.createElement('span');
-        date.textContent = 'Saved ' + job.date;
+        date.textContent = job.statusDate ? (STATUS_LABELS[job.status] || 'Saved') + ' ' + job.statusDate : 'Saved ' + job.date;
+        date.style.cssText = 'font-size:11px;color:var(--ac-text-muted);';
         meta.appendChild(date);
       }
 
-      // Applied toggle
-      const appliedBtn = document.createElement('button');
-      appliedBtn.className = 'jm-saved-applied-btn' + (job.applied ? ' applied' : '');
-      appliedBtn.textContent = job.applied ? 'Applied' : 'Mark Applied';
-      appliedBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        try {
-          const result = await sendMessage({ type: 'TOGGLE_JOB_APPLIED', jobId: job.id });
-          appliedBtn.classList.toggle('applied', result.applied);
-          appliedBtn.textContent = result.applied ? 'Applied' : 'Mark Applied';
-          card.classList.toggle('is-applied', result.applied);
-        } catch (_) {}
-      });
-      meta.appendChild(appliedBtn);
-
-      if (job.applied) card.classList.add('is-applied');
-
-      // Prep button
+      // Prep button (lightning icon)
       const prep = document.createElement('button');
       prep.className = 'jm-saved-prep';
-      prep.textContent = 'Prep';
+      prep.innerHTML = '&#9889; Prep';
       prep.title = 'Interview Prep';
       prep.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -131,7 +131,7 @@ export async function loadSavedJobs() {
       const del = document.createElement('button');
       del.className = 'jm-saved-delete';
       del.innerHTML = '&#10005;';
-      del.title = 'Remove saved job';
+      del.title = 'Remove job';
       del.addEventListener('click', () => deleteSavedJob(job.id, card));
 
       card.appendChild(title);
@@ -142,22 +142,13 @@ export async function loadSavedJobs() {
       list.appendChild(card);
     });
   } catch (e) {
-    // Silently fail — user can retry by switching tabs
+    // Silently fail
   }
 }
 
-/**
- * Deletes a saved job by ID (optimistic UI removal).
- * @async
- * @param {string} jobId - The saved job's ID.
- * @param {HTMLElement} cardEl - The card DOM element to remove.
- */
 async function deleteSavedJob(jobId, cardEl) {
   const shadowRoot = getShadowRoot();
-  // Optimistic removal from DOM
   cardEl.remove();
-
-  // Show empty state if no cards remain
   if (shadowRoot) {
     const list = shadowRoot.getElementById('jmSavedList');
     const emptyMsg = shadowRoot.getElementById('jmSavedEmpty');
@@ -165,11 +156,9 @@ async function deleteSavedJob(jobId, cardEl) {
       emptyMsg.style.display = 'block';
     }
   }
-
   try {
-    await sendMessage({ type: 'DELETE_JOB', jobId: jobId });
+    await sendMessage({ type: 'DELETE_JOB', jobId });
   } catch (e) {
-    // If delete fails, reload the list to restore correct state
     loadSavedJobs();
   }
 }

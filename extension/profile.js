@@ -1841,41 +1841,57 @@ function escapeAttr(str) {
  * Fetches the applied-jobs list from the background and passes it to renderAppliedJobs.
  * Errors are silently swallowed — the section simply stays empty.
  */
+let _allJobs = []; // Cached for filtering
+
 async function loadAppliedJobs() {
   try {
-    const jobs = await sendMessage({ type: 'GET_APPLIED_JOBS' });
-    renderAppliedJobs(jobs || []);
+    const jobs = await sendMessage({ type: 'GET_SAVED_JOBS' });
+    _allJobs = jobs || [];
+    renderAppliedJobs(_allJobs);
+    wireJobFilters();
   } catch (err) {
-    // Silently fail — the applied jobs section will show the empty state
+    // Silently fail
   }
 }
 
+function wireJobFilters() {
+  const container = document.getElementById('myJobsFilters');
+  if (!container) return;
+  container.querySelectorAll('.myjobs-filter').forEach(btn => {
+    btn.addEventListener('click', () => {
+      container.querySelectorAll('.myjobs-filter').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const filter = btn.dataset.filter;
+      if (filter === 'all') {
+        renderAppliedJobs(_allJobs);
+      } else {
+        renderAppliedJobs(_allJobs.filter(j => j.status === filter));
+      }
+    });
+  });
+}
+
 /**
- * Renders the applied-jobs tracker as an HTML table.
- * Shows an empty-state message when the list is empty.
- * Each row has a Delete button that immediately removes the job from storage
- * and refreshes the table.
- *
- * Score badges are coloured by threshold:
- *   >= 70 → green (strong match)
- *   45-69 → amber (good match)
- *   <  45 → red   (weak match)
- *
- * @param {Array<{id: string, title: string, company: string, location: string,
- *                salary: string, date: string, url: string, score: number}>} jobs
+ * Renders the unified My Jobs tracker as an HTML table.
+ * Shows all jobs (saved + applied + interview + offer + rejected) with
+ * status dropdowns, JD preview, and delete actions.
+ * @param {Array<Object>} jobs
  */
 function renderAppliedJobs(jobs) {
   const container = document.getElementById('appliedJobsList');
   const countEl   = document.getElementById('appliedCount');
 
   if (!jobs.length) {
-    container.innerHTML = '<div class="applied-empty">No applied jobs yet. Use the side panel on a job posting to mark jobs as applied.</div>';
+    container.innerHTML = '<div class="applied-empty">No jobs tracked yet. Use the side panel on a job posting to save or apply to jobs.</div>';
     countEl.textContent = '';
     return;
   }
 
-  // Pluralise "job" / "jobs" based on count
-  countEl.textContent = jobs.length + ' job' + (jobs.length === 1 ? '' : 's') + ' applied';
+  const applied = jobs.filter(j => j.status && j.status !== 'saved').length;
+  countEl.textContent = jobs.length + ' job' + (jobs.length === 1 ? '' : 's') + (applied > 0 ? ` (${applied} applied)` : '');
+
+  const statusOptions = ['saved', 'applied', 'interview', 'offer', 'rejected', 'withdrawn'];
+  const statusLabels = { saved: 'Saved', applied: 'Applied', interview: 'Interview', offer: 'Offer', rejected: 'Rejected', withdrawn: 'Withdrawn' };
 
   let html = `<table class="applied-table">
     <thead>
@@ -1883,8 +1899,7 @@ function renderAppliedJobs(jobs) {
         <th>Score</th>
         <th>Title</th>
         <th>Company</th>
-        <th>Location</th>
-        <th>Salary</th>
+        <th>Status</th>
         <th>Date</th>
         <th></th>
       </tr>
@@ -1892,39 +1907,109 @@ function renderAppliedJobs(jobs) {
     <tbody>`;
 
   for (const job of jobs) {
-    // Colour-code the score badge based on the match quality thresholds
     const scoreClass = job.score >= 70 ? 'green' : job.score >= 45 ? 'amber' : 'red';
     const title    = escapeHTML(job.title    || 'Unknown');
     const company  = escapeHTML(job.company  || '');
-    const location = escapeHTML(job.location || '-');
-    const salary   = escapeHTML(job.salary   || '-');
-    const date     = escapeHTML(job.date     || '');
+    const date     = escapeHTML(job.statusDate || job.date || '');
     const url      = escapeAttr(job.url      || '#');
+    const status   = job.status || 'saved';
+    const hasJD    = !!(job.jdText && job.jdText.length > 50);
 
-    html += `<tr>
+    // Status dropdown
+    let statusSelect = `<select class="myjobs-status-select status-${status}" data-id="${escapeAttr(job.id)}">`;
+    for (const s of statusOptions) {
+      statusSelect += `<option value="${s}" ${s === status ? 'selected' : ''}>${statusLabels[s]}</option>`;
+    }
+    statusSelect += '</select>';
+    if (job.source === 'auto-detected') {
+      statusSelect += ' <span style="font-size:10px;color:var(--ac-text-muted);">Auto</span>';
+    }
+
+    html += `<tr data-job-id="${escapeAttr(job.id)}">
       <td><span class="score-badge score-badge-${scoreClass}">${job.score || 0}</span></td>
-      <td><a href="${url}" target="_blank" rel="noopener">${title}</a></td>
+      <td>
+        <a href="${url}" target="_blank" rel="noopener">${title}</a>
+        ${hasJD ? `<button class="btn btn-sm myjobs-jd-toggle" data-id="${escapeAttr(job.id)}" style="margin-left:6px;font-size:10px;padding:1px 6px;">View JD</button>` : ''}
+      </td>
       <td>${company}</td>
-      <td>${location}</td>
-      <td>${salary}</td>
+      <td>${statusSelect}</td>
       <td>${date}</td>
-      <td><button class="btn btn-danger btn-sm delete-applied" data-id="${escapeAttr(job.id)}">Delete</button></td>
+      <td>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button class="btn btn-primary btn-sm myjobs-prep-btn" data-id="${escapeAttr(job.id)}" data-title="${escapeAttr(job.title || '')}" data-company="${escapeAttr(job.company || '')}" data-url="${escapeAttr(job.url || '')}">&#9889; Prep</button>
+          <button class="btn btn-danger btn-sm delete-applied" data-id="${escapeAttr(job.id)}">&#10005;</button>
+        </div>
+      </td>
     </tr>`;
+
+    // Hidden JD preview row
+    if (hasJD) {
+      html += `<tr class="myjobs-jd-row" id="jd-row-${escapeAttr(job.id)}" style="display:none;">
+        <td colspan="6"><div class="myjobs-jd-content">${escapeHTML(job.jdText)}</div></td>
+      </tr>`;
+    }
   }
 
   html += '</tbody></table>';
   container.innerHTML = html;
 
-  // Wire delete buttons after the HTML is in the DOM
+  // Wire status dropdowns
+  container.querySelectorAll('.myjobs-status-select').forEach(select => {
+    select.addEventListener('change', async () => {
+      const jobId = select.dataset.id;
+      const newStatus = select.value;
+      try {
+        await sendMessage({ type: 'UPDATE_JOB_STATUS', jobId, status: newStatus });
+        // Update the class for color
+        select.className = 'myjobs-status-select status-' + newStatus;
+        showToast('Status updated to ' + newStatus);
+        // Update cached data
+        const job = _allJobs.find(j => j.id === jobId);
+        if (job) {
+          job.status = newStatus;
+          job.statusDate = new Date().toISOString().split('T')[0];
+        }
+      } catch (err) {
+        showToast('Error: ' + err.message);
+      }
+    });
+  });
+
+  // Wire JD preview toggles
+  container.querySelectorAll('.myjobs-jd-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const row = document.getElementById('jd-row-' + btn.dataset.id);
+      if (row) {
+        row.style.display = row.style.display === 'none' ? '' : 'none';
+        btn.textContent = row.style.display === 'none' ? 'View JD' : 'Hide JD';
+      }
+    });
+  });
+
+  // Wire delete buttons
   container.querySelectorAll('.delete-applied').forEach(btn => {
     btn.addEventListener('click', async () => {
       try {
-        await sendMessage({ type: 'DELETE_APPLIED_JOB', jobId: btn.dataset.id });
+        await sendMessage({ type: 'DELETE_JOB', jobId: btn.dataset.id });
+        _allJobs = _allJobs.filter(j => j.id !== btn.dataset.id);
         showToast('Job removed.');
-        // Reload the full list so the deleted row is gone and the count is correct
         loadAppliedJobs();
       } catch (err) {
         showToast('Error: ' + err.message);
+      }
+    });
+  });
+
+  // Wire Prep buttons — opens the job URL in a new tab and triggers interview prep via the extension panel
+  container.querySelectorAll('.myjobs-prep-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const url = btn.dataset.url;
+      if (url && url !== '#') {
+        // Open the job page — the extension will auto-init there
+        window.open(url, '_blank');
+        showToast('Opening job page for interview prep...');
+      } else {
+        showToast('No job URL available for this entry.');
       }
     });
   });

@@ -494,6 +494,25 @@ export function getPanelCSS() {
         font-weight: 600;
       }
 
+      /* ── Status Pipeline Badges ── */
+      .jm-status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 10px;
+        border-radius: 8px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+      .jm-status-saved { background: var(--ac-surface-mid); color: var(--ac-text-secondary); }
+      .jm-status-applied { background: #d1e8cf; color: #2d4a2a; }
+      .jm-status-interview { background: #d6e3ff; color: #1e3a5f; }
+      .jm-status-offer { background: #d1fae5; color: #065f46; }
+      .jm-status-rejected { background: #f5d5d5; color: #8b2525; }
+      .jm-status-withdrawn { background: var(--ac-surface-mid); color: var(--ac-text-muted); }
+      .jm-status-auto { font-size: 10px; color: var(--ac-text-muted); font-weight: 400; }
+
       /* Recommendations */
       .jm-recs {
         list-style: none;

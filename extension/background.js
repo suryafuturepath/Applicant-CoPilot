@@ -478,20 +478,93 @@ async function buildRichContextForPrompt() {
   return parts.join('\n\n');
 }
 
+// ─── Unified Jobs Storage ────────────────────────────────────────────────────
+// Single `jobs` array replaces both `savedJobs` and `appliedJobs`.
+// Each job has a `status` field: 'saved' | 'applied' | 'interview' | 'offer' | 'rejected' | 'withdrawn'
+const MAX_JOBS = 500;
+
 /**
- * Retrieves the list of jobs the user has bookmarked / saved for later.
- *
- * Saved jobs are capped at 100 entries (enforced in handleSaveJob).  Each entry
- * contains metadata such as title, company, score, and the full analysis object
- * returned by handleAnalyzeJob.
- *
+ * Retrieves the unified jobs list from local storage.
  * @async
- * @returns {Promise<Array<Object>>} The stored savedJobs array, or [] if absent.
+ * @returns {Promise<Array<Object>>}
+ */
+async function getJobs() {
+  const result = await chrome.storage.local.get('jobs');
+  return result.jobs || [];
+}
+
+/**
+ * Persists the unified jobs list to local storage.
+ * @async
+ */
+async function setJobs(jobs) {
+  await chrome.storage.local.set({ jobs });
+}
+
+/**
+ * Backwards-compatible wrapper — returns jobs filtered as "saved" (any status).
+ * Used by interview prep, analysis caching, etc.
  */
 async function getSavedJobs() {
-  const result = await chrome.storage.local.get('savedJobs');
-  return result.savedJobs || [];
+  return getJobs();
 }
+
+/**
+ * Migrates old `savedJobs` + `appliedJobs` into the unified `jobs` array.
+ * Idempotent — checks `jobsMigrated` flag before running.
+ */
+async function migrateJobsStorage() {
+  const flags = await chrome.storage.local.get('jobsMigrated');
+  if (flags.jobsMigrated) return;
+
+  const data = await chrome.storage.local.get(['savedJobs', 'appliedJobs']);
+  const saved = data.savedJobs || [];
+  const applied = data.appliedJobs || [];
+  const merged = [];
+  const seenUrls = new Set();
+
+  // Saved jobs first (richer records with analysis)
+  for (const job of saved) {
+    const url = job.url || '';
+    if (seenUrls.has(url)) continue;
+    seenUrls.add(url);
+    merged.push({
+      ...job,
+      status: job.applied ? 'applied' : 'saved',
+      statusDate: job.date || new Date().toISOString().split('T')[0],
+      statusHistory: [{ status: job.applied ? 'applied' : 'saved', date: job.date || new Date().toISOString().split('T')[0] }],
+      source: 'manual',
+      provider: '',
+      jdText: '',
+      notes: '',
+    });
+  }
+
+  // Applied jobs that aren't already in saved (by URL)
+  for (const job of applied) {
+    const url = job.url || '';
+    if (seenUrls.has(url)) continue;
+    seenUrls.add(url);
+    merged.push({
+      ...job,
+      status: 'applied',
+      statusDate: job.date || new Date().toISOString().split('T')[0],
+      statusHistory: [{ status: 'applied', date: job.date || new Date().toISOString().split('T')[0] }],
+      source: 'manual',
+      provider: '',
+      analysis: null,
+      jdDigest: null,
+      jdText: '',
+      notes: '',
+    });
+  }
+
+  await chrome.storage.local.set({ jobs: merged, jobsMigrated: true });
+  console.log('[AC] Migrated jobs storage:', merged.length, 'jobs from', saved.length, 'saved +', applied.length, 'applied');
+}
+
+// Run migration on startup
+migrateJobsStorage().catch(e => console.warn('[AC] Jobs migration failed:', e));
 
 
 // ─── Profile enrichment ─────────────────────────────────────────────────────
@@ -1132,26 +1205,43 @@ async function handleMatchDropdown(questionText, options) {
  * @returns {Promise<Object>} The normalised job record that was persisted.
  */
 async function handleSaveJob(jobData) {
-  const jobs = await getSavedJobs();
+  const jobs = await getJobs();
+  const url = jobData.url || '';
+  const now = new Date().toISOString().split('T')[0];
+
+  // Deduplicate by URL — if already exists, update the record
+  const existing = jobs.find(j => j.url === url);
+  if (existing) {
+    existing.analysis = jobData.analysis || existing.analysis;
+    existing.jdDigest = jobData.analysis?.jdDigest || existing.jdDigest;
+    existing.jdText = jobData.jdText || existing.jdText;
+    existing.score = jobData.score || existing.score;
+    await setJobs(jobs);
+    return existing;
+  }
+
   const job = {
-    id: Date.now().toString(), // String ID derived from epoch ms — unique enough for local storage
+    id: Date.now().toString(),
     title: jobData.title || 'Unknown Position',
     company: jobData.company || 'Unknown Company',
     location: jobData.location || '',
     salary: jobData.salary || '',
     score: jobData.score || 0,
-    url: jobData.url || '',
-    date: new Date().toISOString().split('T')[0], // Store date only (YYYY-MM-DD), not time
-    analysis: jobData.analysis || null,            // Full analysis blob; may be null for quick-saves
-    jdDigest: jobData.analysis?.jdDigest || null,  // Structured digest (~500 tokens) for interview prep
-    applied: false                                  // Whether the user has applied to this job
+    url,
+    date: now,
+    analysis: jobData.analysis || null,
+    jdDigest: jobData.analysis?.jdDigest || null,
+    jdText: jobData.jdText || '',
+    status: 'saved',
+    statusDate: now,
+    statusHistory: [{ status: 'saved', date: now }],
+    source: 'manual',
+    provider: jobData.provider || '',
+    notes: '',
   };
-  // Prepend so the UI shows the most recently saved job at the top
   jobs.unshift(job);
-  // Keep max 100 jobs — truncate the array in place to avoid unnecessary copies
-  if (jobs.length > MAX_SAVED_JOBS) jobs.length = MAX_SAVED_JOBS;
-  // Persist the updated array back to storage
-  await chrome.storage.local.set({ savedJobs: jobs });
+  if (jobs.length > MAX_JOBS) jobs.length = MAX_JOBS;
+  await setJobs(jobs);
   return job;
 }
 
@@ -1163,10 +1253,9 @@ async function handleSaveJob(jobData) {
  * @returns {Promise<{success: true}>} Confirmation object.
  */
 async function handleDeleteJob(jobId) {
-  const jobs = await getSavedJobs();
-  // Filter creates a new array without the target job; then persist
+  const jobs = await getJobs();
   const filtered = jobs.filter(j => j.id !== jobId);
-  await chrome.storage.local.set({ savedJobs: filtered });
+  await setJobs(filtered);
   return { success: true };
 }
 
@@ -1184,8 +1273,8 @@ async function handleDeleteJob(jobId) {
  * @returns {Promise<Array<Object>>} The stored appliedJobs array, or [] if absent.
  */
 async function getAppliedJobs() {
-  const result = await chrome.storage.local.get('appliedJobs');
-  return result.appliedJobs || [];
+  const jobs = await getJobs();
+  return jobs.filter(j => j.status && j.status !== 'saved');
 }
 
 /**
@@ -1204,11 +1293,27 @@ async function getAppliedJobs() {
  *   if the URL was already present.
  */
 async function handleMarkApplied(jobData) {
-  const jobs = await getAppliedJobs();
-  // Deduplicate by URL: applying to the same posting twice should be a no-op
-  if (jobs.some(j => j.url === jobData.url)) {
-    return { success: true, duplicate: true };
+  const jobs = await getJobs();
+  const url = jobData.url || '';
+  const now = new Date().toISOString().split('T')[0];
+
+  // If job already exists (saved or already applied), update status
+  const existing = jobs.find(j => j.url === url);
+  if (existing) {
+    if (existing.status === 'applied' || existing.status === 'interview' || existing.status === 'offer') {
+      return { success: true, duplicate: true };
+    }
+    existing.status = 'applied';
+    existing.statusDate = now;
+    existing.source = jobData.source || 'manual';
+    if (!existing.statusHistory) existing.statusHistory = [];
+    existing.statusHistory.push({ status: 'applied', date: now });
+    existing.jdText = jobData.jdText || existing.jdText || '';
+    await setJobs(jobs);
+    return existing;
   }
+
+  // New job — create record
   const job = {
     id: Date.now().toString(),
     title: jobData.title || 'Unknown Position',
@@ -1216,16 +1321,21 @@ async function handleMarkApplied(jobData) {
     location: jobData.location || '',
     salary: jobData.salary || '',
     score: jobData.score || 0,
-    url: jobData.url || '',
-    date: new Date().toISOString().split('T')[0]
-    // Note: analysis is intentionally omitted here to keep the applied list leaner
+    url,
+    date: now,
+    analysis: null,
+    jdDigest: null,
+    jdText: jobData.jdText || '',
+    status: 'applied',
+    statusDate: now,
+    statusHistory: [{ status: 'applied', date: now }],
+    source: jobData.source || 'manual',
+    provider: jobData.provider || '',
+    notes: '',
   };
-  // Prepend for chronological descending order
   jobs.unshift(job);
-  // Cap at 500 entries — applied list is larger than saved list since users
-  // typically apply to many more jobs than they bookmark.
-  if (jobs.length > MAX_APPLIED_JOBS) jobs.length = MAX_APPLIED_JOBS;
-  await chrome.storage.local.set({ appliedJobs: jobs });
+  if (jobs.length > MAX_JOBS) jobs.length = MAX_JOBS;
+  await setJobs(jobs);
   return job;
 }
 
@@ -1425,10 +1535,29 @@ ${richContext}`,
  * @returns {Promise<{success: true}>} Confirmation object.
  */
 async function handleDeleteAppliedJob(jobId) {
-  const jobs = await getAppliedJobs();
+  const jobs = await getJobs();
   const filtered = jobs.filter(j => j.id !== jobId);
-  await chrome.storage.local.set({ appliedJobs: filtered });
+  await setJobs(filtered);
   return { success: true };
+}
+
+/**
+ * Updates a job's status in the pipeline (saved → applied → interview → offer → rejected → withdrawn).
+ * Appends to statusHistory for audit trail.
+ */
+async function handleUpdateJobStatus(jobId, newStatus) {
+  const validStatuses = ['saved', 'applied', 'interview', 'offer', 'rejected', 'withdrawn'];
+  if (!validStatuses.includes(newStatus)) throw new Error('Invalid status: ' + newStatus);
+  const jobs = await getJobs();
+  const job = jobs.find(j => j.id === jobId);
+  if (!job) throw new Error('Job not found');
+  const now = new Date().toISOString().split('T')[0];
+  job.status = newStatus;
+  job.statusDate = now;
+  if (!job.statusHistory) job.statusHistory = [];
+  job.statusHistory.push({ status: newStatus, date: now });
+  await setJobs(jobs);
+  return job;
 }
 
 /**
@@ -2527,15 +2656,24 @@ const handlers = {
   'DELETE_JOB': (msg) => handleDeleteJob(msg.jobId),
 
   'TOGGLE_JOB_APPLIED': async (msg) => {
-    const jobs = await getSavedJobs();
+    const jobs = await getJobs();
     const job = jobs.find(j => j.id === msg.jobId);
     if (!job) throw new Error('Job not found');
-    job.applied = !job.applied;
-    await chrome.storage.local.set({ savedJobs: jobs });
-    return { success: true, applied: job.applied };
+    const now = new Date().toISOString().split('T')[0];
+    job.status = job.status === 'applied' ? 'saved' : 'applied';
+    job.statusDate = now;
+    if (!job.statusHistory) job.statusHistory = [];
+    job.statusHistory.push({ status: job.status, date: now });
+    await setJobs(jobs);
+    return { success: true, applied: job.status === 'applied' };
   },
 
-  'GET_SAVED_JOBS': (msg) => getSavedJobs(),
+  'GET_SAVED_JOBS': (msg) => getJobs(),
+
+  'UPDATE_JOB_STATUS': async (msg) => {
+    const result = await handleUpdateJobStatus(msg.jobId, msg.status);
+    return result;
+  },
 
   // ── Interview Prep ──────────────────────────────────────────────────────
   'GENERATE_INTERVIEW_QUESTIONS': (msg) => handleGenerateInterviewQuestions(msg.jobId, msg.jobUrl, msg.categories),

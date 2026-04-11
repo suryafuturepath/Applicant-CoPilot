@@ -16,6 +16,7 @@ import { loadSlotState } from './panel/slot-switcher.js';
 import { setStatus, clearStatus } from './panel/status.js';
 import { getPanelOpen } from './state.js';
 import { registerInterviewPrepHandlers } from './features/interview-prep.js';
+import { initApplyDetector } from './platform/providers/apply-detector.js';
 
 // ─── Double-injection guard ─────────────────────────────────────
 if (window.__applicantCopilotLoaded) {
@@ -75,10 +76,9 @@ if (window.__applicantCopilotLoaded) {
     isOnJobSite: isJobSite(),
   });
 
-  // ─── Auto-scan keyword match (renders in panel, no floating widget) ──
-  console.log('[AC][init] isJobSite:', isJobSite());
+  // ─── Auto-scan + apply detection ─────────────────────────────
   if (isJobSite()) {
-    console.log('[AC][init] Starting auto-scan init');
     initAutoScan(true);
+    initApplyDetector();
   }
 }

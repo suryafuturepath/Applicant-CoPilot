@@ -85,6 +85,10 @@ export function togglePanel() {
       toggleBtnRef.setAttribute('aria-pressed', String(panelOpen));
     }
 
+    // Hide/show the FAB toggle button when panel opens/closes
+    const fabHost = document.getElementById('applicant-copilot-toggle-host');
+    if (fabHost) fabHost.style.display = panelOpen ? 'none' : '';
+
     if (panelOpen) {
       currentPanelRoot.classList.add('open');
       panel.classList.add('open');
@@ -130,5 +134,5 @@ export function togglePanel() {
         _escHandler = null;
       }
     }
-    // Button always stays visible — never hide the toggle host
+    // FAB visibility toggled above — hidden when panel is open
   }
