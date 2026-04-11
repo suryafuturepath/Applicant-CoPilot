@@ -41,12 +41,6 @@ export function getPanelHTML() {
             </div>
           </div>
 
-          <!-- Resume slot switcher -->
-          <div class="jm-resume-switcher" id="jmResumeSwitch">
-            <span class="jm-switch-label">Resume:</span>
-            <div class="jm-switch-pills" id="jmSwitchPills"></div>
-          </div>
-
           <div class="jm-actions">
             <button class="jm-btn jm-btn-primary" id="jmAnalyze">Analyze Job</button>
             <button class="jm-btn jm-btn-secondary" id="jmAutofill">AutoFill Application</button>

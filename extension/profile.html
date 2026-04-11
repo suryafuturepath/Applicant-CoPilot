@@ -7,63 +7,41 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
-    /* ── Theme CSS Variables ── */
+    /* ── The Organic Archive — Sage Design System ── */
+    @font-face {
+      font-family: 'Manrope';
+      src: url('fonts/Manrope-Variable.woff2') format('woff2');
+      font-weight: 200 800;
+      font-style: normal;
+      font-display: swap;
+    }
+
     body {
-      --ac-primary: #3b82f6;
-      --ac-primary-hover: #2563eb;
+      --ac-primary: #4f614d;
+      --ac-primary-hover: #3d4d3b;
+      --ac-primary-gradient: linear-gradient(135deg, #4f614d, #677965);
       --ac-bg: #ffffff;
-      --ac-card-bg: #f8fafc;
-      --ac-border: #e2e8f0;
-      --ac-text: #1e293b;
-      --ac-text-secondary: #64748b;
-      --ac-text-muted: #94a3b8;
-      --ac-tag-bg: #dbeafe;
-      --ac-tag-text: #1e40af;
-      --ac-hover-bg: #eff6ff;
-      --ac-input-bg: #f8fafc;
-      --ac-shadow: rgba(59,130,246,0.15);
-      --ac-page-bg: #f0f2f5;
-      --ac-header-bg: #3b82f6;
-    }
-
-    body.theme-dark {
-      --ac-primary: #3b82f6;
-      --ac-primary-hover: #2563eb;
-      --ac-bg: #1e293b;
-      --ac-card-bg: #0f172a;
-      --ac-border: #334155;
-      --ac-text: #f1f5f9;
-      --ac-text-secondary: #cbd5e1;
-      --ac-text-muted: #94a3b8;
-      --ac-tag-bg: #1e3a5f;
-      --ac-tag-text: #93c5fd;
-      --ac-hover-bg: #334155;
-      --ac-input-bg: #0f172a;
-      --ac-shadow: rgba(0,0,0,0.3);
-      --ac-page-bg: #0f172a;
-      --ac-header-bg: #1e3a5f;
-    }
-
-    body.theme-warm {
-      --ac-primary: #d97706;
-      --ac-primary-hover: #b45309;
-      --ac-bg: #fffbf5;
-      --ac-card-bg: #fefce8;
-      --ac-border: #fde68a;
-      --ac-text: #451a03;
-      --ac-text-secondary: #92400e;
-      --ac-text-muted: #a16207;
-      --ac-tag-bg: #fef3c7;
-      --ac-tag-text: #92400e;
-      --ac-hover-bg: #fef9c3;
-      --ac-input-bg: #fefce8;
-      --ac-shadow: rgba(217,119,6,0.15);
-      --ac-page-bg: #fffbf5;
-      --ac-header-bg: #d97706;
+      --ac-card-bg: #ffffff;
+      --ac-surface-low: #f3f4f3;
+      --ac-surface-mid: #edeeed;
+      --ac-surface-high: #e4e5e3;
+      --ac-border: #edeeed;
+      --ac-text: #191c1c;
+      --ac-text-secondary: #434842;
+      --ac-text-muted: #727971;
+      --ac-tag-bg: #e8ede7;
+      --ac-tag-text: #3d4d3b;
+      --ac-hover-bg: #eef0ee;
+      --ac-input-bg: #ffffff;
+      --ac-shadow: rgba(25, 28, 28, 0.06);
+      --ac-page-bg: #f9f9f8;
+      --ac-header-bg: #4f614d;
+      --ac-secondary: #465f88;
+      --ac-secondary-fixed: #d6e3ff;
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: var(--ac-page-bg);
       color: var(--ac-text);
       line-height: 1.5;
@@ -641,7 +619,7 @@
       resize: vertical;
       background: #fff;
     }
-    .prompt-textarea:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+    .prompt-textarea:focus { outline: none; border-color: var(--ac-primary); box-shadow: 0 0 0 2px var(--ac-shadow); }
     .prompt-section-footer {
       display: flex;
       justify-content: flex-end;
