@@ -1309,12 +1309,13 @@
     .myjobs-meta-item { display: inline-flex; align-items: center; gap: 3px; }
     .myjobs-meta-icon { opacity: 0.55; }
 
-    /* Actions */
+    /* Actions — fixed-height container forces all children to the same height */
     .myjobs-card-actions {
       display: flex;
-      align-items: center;
+      align-items: stretch;
       gap: 8px;
       flex-shrink: 0;
+      height: 32px;
     }
 
     /* View JD */
@@ -1322,7 +1323,7 @@
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      padding: 6px 12px;
+      padding: 0 12px;
       border: 1px solid var(--ac-border);
       border-radius: var(--ac-radius-lg);
       background: var(--ac-bg);
@@ -1343,6 +1344,7 @@
       display: inline-flex;
       align-items: center;
       flex-shrink: 0;
+      height: 100%;
     }
 
     .myjobs-status-wrap::after {
@@ -1361,6 +1363,7 @@
     }
 
     .myjobs-status-pill {
+      height: auto;
       padding: 6px 28px 6px 12px;
       border-radius: 20px;
       border: 1.5px solid transparent;
@@ -1398,7 +1401,7 @@
       display: inline-flex;
       align-items: center;
       gap: 5px;
-      padding: 7px 14px;
+      padding: 0 14px;
       border-radius: var(--ac-radius-lg);
       border: none;
       background: var(--ac-primary-gradient);
@@ -1416,7 +1419,8 @@
     /* Delete button */
     .myjobs-delete-btn {
       width: 32px;
-      height: 32px;
+      height: 100%;
+      aspect-ratio: 1;
       border: none;
       border-radius: var(--ac-radius-lg);
       background: #fee2e2;
