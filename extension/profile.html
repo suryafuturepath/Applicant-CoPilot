@@ -1517,6 +1517,97 @@
     .applied-table a:hover { text-decoration: underline; }
 
     /* ══════════════════════════════════════════════
+       LINKEDIN IMPORT — ONBOARDING + REFRESH
+    ══════════════════════════════════════════════ */
+    .li-welcome {
+      text-align: center;
+      padding: 48px 24px;
+      max-width: 520px;
+      margin: 0 auto;
+    }
+    .li-welcome-logo {
+      width: 56px; height: 56px;
+      background: #384937; border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 20px;
+    }
+    .li-welcome-logo svg { width: 28px; height: 28px; }
+    .li-welcome h2 {
+      font-size: 24px; font-weight: 700; color: var(--ac-text);
+      margin-bottom: 8px;
+    }
+    .li-welcome p {
+      font-size: 15px; color: var(--ac-text-secondary);
+      margin-bottom: 24px; line-height: 1.6;
+    }
+    .li-import-btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 12px 28px; border: none; border-radius: var(--ac-radius-lg);
+      background: #0A66C2; color: #fff;
+      font-size: 15px; font-weight: 600; cursor: pointer;
+      font-family: inherit; transition: all 0.2s;
+    }
+    .li-import-btn:hover { background: #004182; box-shadow: 0 4px 12px rgba(10,102,194,0.3); }
+    .li-import-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .li-skip-link {
+      display: block; margin-top: 16px;
+      font-size: 13px; color: var(--ac-text-muted);
+      cursor: pointer; background: none; border: none;
+      font-family: inherit; text-decoration: underline;
+    }
+    .li-skip-link:hover { color: var(--ac-text-secondary); }
+
+    /* Progress stepper */
+    .li-stepper {
+      display: flex; justify-content: center; gap: 8px;
+      margin: 20px 0; align-items: center;
+    }
+    .li-step {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px; color: var(--ac-text-muted); font-weight: 500;
+    }
+    .li-step-dot {
+      width: 24px; height: 24px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 600;
+      border: 2px solid var(--ac-border); color: var(--ac-text-muted);
+      transition: all 0.3s;
+    }
+    .li-step.active .li-step-dot { border-color: #0A66C2; color: #0A66C2; }
+    .li-step.done .li-step-dot {
+      border-color: #22c55e; background: #22c55e; color: #fff;
+    }
+    .li-step-line { width: 24px; height: 2px; background: var(--ac-border); }
+    .li-step-line.done { background: #22c55e; }
+
+    /* Import result */
+    .li-result {
+      background: var(--ac-surface-low); border-radius: var(--ac-radius-xl);
+      padding: 20px; margin-top: 20px; text-align: center;
+    }
+    .li-result-icon { font-size: 40px; color: #22c55e; margin-bottom: 8px; }
+    .li-result h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+    .li-result p { font-size: 13px; color: var(--ac-text-secondary); margin-bottom: 16px; }
+
+    /* Refresh button (returning user) */
+    .li-refresh-row {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 20px;
+    }
+    .li-refresh-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; border: 1px solid #0A66C2; border-radius: var(--ac-radius-lg);
+      background: none; color: #0A66C2;
+      font-size: 13px; font-weight: 500; cursor: pointer;
+      font-family: inherit; transition: all 0.2s;
+    }
+    .li-refresh-btn:hover { background: rgba(10,102,194,0.08); }
+    .li-refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .li-refresh-date {
+      font-size: 12px; color: var(--ac-text-muted);
+    }
+
+    /* ══════════════════════════════════════════════
        INTERVIEW PREP (full-page view)
     ══════════════════════════════════════════════ */
     .prep-back-btn {
@@ -2252,9 +2343,7 @@
     <div class="sidebar-brand">
       <div class="sidebar-brand-row">
         <div class="sidebar-logo">
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 3L21 20H3L12 3Z" fill="#a8c5a0" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
-          </svg>
+          <svg viewBox="0 0 24 24" fill="#a8c5a0"><path d="M20 9V7c0-1.1-.9-2-2-2h-3c0-1.66-1.34-3-3-3S9 3.34 9 5H6c-1.1 0-2 .9-2 2v2c-1.66 0-3 1.34-3 3s1.34 3 3 3v4c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-4c1.66 0 3-1.34 3-3s-1.34-3-3-3zM7.5 11.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5S9.83 13 9 13s-1.5-.67-1.5-1.5zM16 17H8v-2h8v2zm-1-4c-.83 0-1.5-.67-1.5-1.5S14.17 10 15 10s1.5.67 1.5 1.5S15.83 13 15 13z"/></svg>
         </div>
         <span class="sidebar-brand-text">Applicant Copilot</span>
       </div>
@@ -2316,11 +2405,54 @@
       ═══════════════════════════════════════════════ -->
       <div class="tab-content active" id="tab-profile">
 
+        <!-- ═══ LinkedIn Import: Onboarding Welcome Card ═══ -->
+        <div id="liWelcome" class="li-welcome" style="display:none;">
+          <div class="li-welcome-logo">
+            <svg viewBox="0 0 24 24" fill="#a8c5a0"><path d="M20 9V7c0-1.1-.9-2-2-2h-3c0-1.66-1.34-3-3-3S9 3.34 9 5H6c-1.1 0-2 .9-2 2v2c-1.66 0-3 1.34-3 3s1.34 3 3 3v4c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-4c1.66 0 3-1.34 3-3s-1.34-3-3-3zM7.5 11.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5S9.83 13 9 13s-1.5-.67-1.5-1.5zM16 17H8v-2h8v2zm-1-4c-.83 0-1.5-.67-1.5-1.5S14.17 10 15 10s1.5.67 1.5 1.5S15.83 13 15 13z"/></svg>
+          </div>
+          <h2>Let's build your profile</h2>
+          <p>Import from LinkedIn to get started in seconds. We'll pull your experience, education, and skills to pre-fill your profile.</p>
+
+          <div id="liStepper" class="li-stepper" style="display:none;">
+            <div class="li-step" data-step="experience"><div class="li-step-dot">1</div><span>Experience</span></div>
+            <div class="li-step-line" data-line="1"></div>
+            <div class="li-step" data-step="education"><div class="li-step-dot">2</div><span>Education</span></div>
+            <div class="li-step-line" data-line="2"></div>
+            <div class="li-step" data-step="certifications"><div class="li-step-dot">3</div><span>Certs</span></div>
+            <div class="li-step-line" data-line="3"></div>
+            <div class="li-step" data-step="projects"><div class="li-step-dot">4</div><span>Projects</span></div>
+            <div class="li-step-line" data-line="4"></div>
+            <div class="li-step" data-step="skills"><div class="li-step-dot">5</div><span>Skills</span></div>
+          </div>
+
+          <button class="li-import-btn" id="liImportBtn">
+            <span class="material-symbols-outlined" style="font-size:20px;">download</span>
+            Import from LinkedIn
+          </button>
+          <button class="li-skip-link" id="liSkipBtn">Skip — I'll fill it in manually</button>
+
+          <div id="liResult" class="li-result" style="display:none;">
+            <div class="li-result-icon"><span class="material-symbols-outlined" style="font-size:40px;color:#22c55e;">check_circle</span></div>
+            <h3 id="liResultTitle">Import complete</h3>
+            <p id="liResultDesc"></p>
+            <button class="btn btn-primary" id="liContinueBtn">Continue to Profile</button>
+          </div>
+        </div>
+
         <!-- Page Header -->
-        <div class="page-header">
+        <div class="page-header" id="profilePageHeader">
           <span class="page-eyebrow">Curating the Narrative</span>
           <h1 class="page-title">User Context</h1>
           <p class="page-subtitle">This is your editorial base. Define your professional legacy to allow the Copilot to draft precisely tailored applications.</p>
+        </div>
+
+        <!-- ═══ LinkedIn Import: Refresh button (returning user) ═══ -->
+        <div class="li-refresh-row" id="liRefreshRow" style="display:none;">
+          <button class="li-refresh-btn" id="liRefreshBtn">
+            <span class="material-symbols-outlined" style="font-size:18px;">sync</span>
+            Refresh from LinkedIn
+          </button>
+          <span class="li-refresh-date" id="liRefreshDate"></span>
         </div>
 
         <!-- ── 1. Your Resumes ── -->

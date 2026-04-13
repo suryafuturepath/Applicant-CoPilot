@@ -1808,6 +1808,301 @@ function buildContextForPrompt() {
   return parts.join('\n\n');
 }
 
+// ─── LinkedIn import (onboarding + refresh) ─────────────────────────────────
+
+/** Runs the LinkedIn import flow and updates the stepper UI. */
+async function startLinkedInImport(opts = {}) {
+  const isOnboarding = opts.onboarding === true;
+  const importBtn = document.getElementById(isOnboarding ? 'liImportBtn' : 'liRefreshBtn');
+  const stepper = document.getElementById('liStepper');
+
+  if (importBtn) {
+    importBtn.disabled = true;
+    importBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:20px;">hourglass_top</span> Importing...';
+  }
+  if (isOnboarding && stepper) stepper.style.display = 'flex';
+
+  // Per-page stepper sync: background sets linkedinImport.phase to one of
+  // experience|education|certifications|projects|skills as it progresses.
+  const PAGE_ORDER = ['experience', 'education', 'certifications', 'projects', 'skills'];
+  function onStorageChanged(changes) {
+    if (!changes.linkedinImport) return;
+    const state = changes.linkedinImport.newValue;
+    if (!state) return;
+    const currentIdx = PAGE_ORDER.indexOf(state.phase);
+    document.querySelectorAll('#liStepper .li-step').forEach((step, i) => {
+      step.classList.remove('active', 'done');
+      if (i < currentIdx) step.classList.add('done');
+      else if (i === currentIdx) step.classList.add('active');
+    });
+    document.querySelectorAll('#liStepper .li-step-line').forEach((line, i) => {
+      line.classList.toggle('done', i < currentIdx);
+    });
+  }
+  chrome.storage.onChanged.addListener(onStorageChanged);
+
+  try {
+    const result = await sendMessage({ type: 'START_LINKEDIN_IMPORT' });
+
+    // Handle login-required error
+    if (result?.error === 'NOT_LOGGED_IN') {
+      showToast(result.message || 'Please log into LinkedIn first.', 'error');
+      return;
+    }
+
+    // Mark all stepper steps done on success
+    document.querySelectorAll('#liStepper .li-step').forEach((step) => {
+      step.classList.remove('active');
+      step.classList.add('done');
+    });
+    document.querySelectorAll('#liStepper .li-step-line').forEach(l => l.classList.add('done'));
+
+    // Auto-download snapshot .md file for inspection — this is the
+    // artifact the user wanted to see on disk to validate scraping.
+    if (result?.snapshotMd) {
+      downloadSnapshotMd(result.snapshotMd);
+    }
+
+    // Build informative message from per-section counts.
+    // For union sections (skills, certifications), show "(N new)" when items
+    // were genuinely added on top of what was already in the profile.
+    const counts    = result?.counts    || {};
+    const newCounts = result?.newCounts || {};
+    const parts = [];
+    if (counts.experience) {
+      parts.push(`${counts.experience} experience${counts.experience === 1 ? '' : 's'}`);
+    }
+    if (counts.education) {
+      parts.push(`${counts.education} education`);
+    }
+    if (counts.skills) {
+      const newTag = newCounts.skills > 0 ? ` (${newCounts.skills} new)` : ' (all existing)';
+      parts.push(`${counts.skills} skill${counts.skills === 1 ? '' : 's'}${newTag}`);
+    }
+    if (counts.certifications) {
+      const newTag = newCounts.certifications > 0 ? ` (${newCounts.certifications} new)` : ' (all existing)';
+      parts.push(`${counts.certifications} certification${counts.certifications === 1 ? '' : 's'}${newTag}`);
+    }
+    if (counts.projects) {
+      parts.push(`${counts.projects} project${counts.projects === 1 ? '' : 's'}`);
+    }
+
+    const totalItems = parts.length;
+    const message = totalItems > 0
+      ? `Imported: ${parts.join(', ')}.`
+      : `Could not find profile data. Check that your LinkedIn profile has content and is loaded correctly.`;
+
+    if (isOnboarding) {
+      document.getElementById('liResultDesc').textContent = message + ' Review and fill in the remaining details.';
+      if (importBtn) importBtn.style.display = 'none';
+      document.getElementById('liSkipBtn').style.display = 'none';
+      document.getElementById('liResult').style.display = '';
+    } else {
+      showToast(message, totalItems > 0 ? 'success' : 'error');
+      await reloadProfileData();
+      updateRefreshDate();
+    }
+  } catch (err) {
+    showToast(err.message || 'LinkedIn import failed', 'error');
+  } finally {
+    chrome.storage.onChanged.removeListener(onStorageChanged);
+    if (importBtn) {
+      importBtn.disabled = false;
+      if (isOnboarding) {
+        importBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:20px;">download</span> Import from LinkedIn';
+      } else {
+        importBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:18px;">sync</span> Refresh from LinkedIn';
+      }
+    }
+  }
+}
+
+/** Reloads profile + context from storage into the form without a page reload. */
+async function reloadProfileData() {
+  try {
+    const [profile, contextData] = await Promise.all([
+      sendMessage({ type: 'GET_PROFILE' }),
+      sendMessage({ type: 'GET_APPLICANT_CONTEXT' }).catch(() => null),
+    ]);
+    if (profile) {
+      profileData = profile;
+      populateProfileForm();
+    }
+    if (contextData) {
+      applicantContext = contextData;
+      renderIntakeFlow();
+    }
+  } catch (_) {}
+}
+
+/** Updates the "Last imported" date text from storage. */
+async function updateRefreshDate() {
+  const { linkedinImportDone } = await chrome.storage.local.get('linkedinImportDone');
+  const dateEl = document.getElementById('liRefreshDate');
+  if (linkedinImportDone && dateEl) {
+    dateEl.textContent = 'Last imported: ' + new Date(linkedinImportDone).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+}
+
+/**
+ * Checks if this is a first-time user (no import done, profile mostly empty).
+ * Shows onboarding welcome card or returning-user refresh button accordingly.
+ */
+async function initLinkedInImportUI() {
+  const { linkedinImportDone } = await chrome.storage.local.get('linkedinImportDone');
+  const isFirstTime = !linkedinImportDone && !profileData.name && !(profileData.experience?.length > 0);
+
+  const welcomeEl = document.getElementById('liWelcome');
+  const refreshRow = document.getElementById('liRefreshRow');
+
+  if (isFirstTime) {
+    // Show onboarding welcome, hide regular content
+    welcomeEl.style.display = '';
+    // Hide all profile sections (everything after welcome until next tab)
+    document.querySelectorAll('#tab-profile > *:not(#liWelcome)').forEach(el => {
+      el.dataset.liHidden = el.style.display === 'none' ? 'was-hidden' : '';
+      el.style.display = 'none';
+    });
+  } else {
+    // Returning user — show refresh button
+    welcomeEl.style.display = 'none';
+    refreshRow.style.display = 'flex';
+    updateRefreshDate();
+  }
+}
+
+// Wire onboarding buttons
+document.getElementById('liImportBtn').addEventListener('click', () => {
+  startLinkedInImport({ onboarding: true });
+});
+
+document.getElementById('liSkipBtn').addEventListener('click', () => {
+  // Hide welcome, show all profile content
+  document.getElementById('liWelcome').style.display = 'none';
+  document.querySelectorAll('#tab-profile > *[data-li-hidden]').forEach(el => {
+    el.style.display = el.dataset.liHidden === 'was-hidden' ? 'none' : '';
+    delete el.dataset.liHidden;
+  });
+  document.getElementById('liRefreshRow').style.display = 'flex';
+});
+
+document.getElementById('liContinueBtn').addEventListener('click', async () => {
+  // Reload data and show profile
+  await reloadProfileData();
+  document.getElementById('liWelcome').style.display = 'none';
+  document.querySelectorAll('#tab-profile > *[data-li-hidden]').forEach(el => {
+    el.style.display = el.dataset.liHidden === 'was-hidden' ? 'none' : '';
+    delete el.dataset.liHidden;
+  });
+  document.getElementById('liRefreshRow').style.display = 'flex';
+  updateRefreshDate();
+});
+
+// Wire refresh button (returning user)
+document.getElementById('liRefreshBtn').addEventListener('click', () => {
+  startLinkedInImport({ onboarding: false });
+});
+
+// ── Download snapshot markdown as a real file ───────────────────────────────
+// Uses a Blob URL + anchor click — no extra permission needed.
+function downloadSnapshotMd(md, filenamePrefix = 'linkedin-snapshot') {
+  try {
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${filenamePrefix}-${timestamp}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Revoke after a tick to ensure the download kicked off
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (err) {
+    console.error('[AC] Failed to download snapshot MD:', err);
+  }
+}
+
+// ── LinkedIn Import Diagnostic Overlay (Ctrl+Shift+L) ───────────────────────
+// Two-tab debug: Scrape Snapshot (default) + Debug Trace. Download button
+// available in both tabs to grab the .md file anytime.
+document.addEventListener('keydown', async (e) => {
+  if (!(e.ctrlKey && e.shiftKey && e.key === 'L')) return;
+  e.preventDefault();
+
+  // Toggle behavior — close if already open
+  const existing = document.getElementById('liDiagOverlay');
+  if (existing) { existing.remove(); return; }
+
+  const { _liDebug, _liSnapshotMd } = await chrome.storage.local.get(['_liDebug', '_liSnapshotMd']);
+  const hasDebug = Array.isArray(_liDebug) && _liDebug.length > 0;
+  const hasSnapshot = typeof _liSnapshotMd === 'string' && _liSnapshotMd.length > 0;
+
+  if (!hasDebug && !hasSnapshot) {
+    showToast('No LinkedIn import data found. Run an import first.', 'error');
+    return;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'liDiagOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;padding:24px;';
+
+  const panel = document.createElement('div');
+  panel.style.cssText = 'max-width:1000px;width:100%;max-height:90vh;display:flex;flex-direction:column;background:#1a1a2e;border-radius:12px;overflow:hidden;';
+
+  const tabBar = document.createElement('div');
+  tabBar.style.cssText = 'display:flex;gap:2px;padding:12px 12px 0;background:#0f0f1e;';
+
+  const btnSnapshot = document.createElement('button');
+  btnSnapshot.textContent = `Scrape Snapshot${hasSnapshot ? '' : ' (none)'}`;
+  const btnDebug = document.createElement('button');
+  btnDebug.textContent = `Debug Trace${hasDebug ? '' : ' (none)'}`;
+  const btnDownload = document.createElement('button');
+  btnDownload.textContent = '⬇ Download .md';
+  btnDownload.disabled = !hasSnapshot;
+
+  const tabStyle = 'padding:10px 16px;background:#2a2a44;color:#e0e0e0;border:none;border-radius:8px 8px 0 0;cursor:pointer;font-family:inherit;font-size:13px;';
+  btnSnapshot.style.cssText = tabStyle;
+  btnDebug.style.cssText = tabStyle;
+  btnDownload.style.cssText = tabStyle + 'margin-left:auto;background:#4f614d;' + (hasSnapshot ? '' : 'opacity:0.4;cursor:not-allowed;');
+  btnDownload.addEventListener('click', () => {
+    if (hasSnapshot) downloadSnapshotMd(_liSnapshotMd);
+  });
+
+  const content = document.createElement('pre');
+  content.style.cssText = 'flex:1;overflow:auto;background:#1a1a2e;color:#e0e0e0;padding:24px;margin:0;font-size:12.5px;font-family:ui-monospace,Menlo,monospace;line-height:1.55;white-space:pre-wrap;word-break:break-word;';
+
+  function renderSnapshot() {
+    btnSnapshot.style.background = '#4f614d';
+    btnDebug.style.background = '#2a2a44';
+    content.textContent = hasSnapshot ? _liSnapshotMd : '(no snapshot captured — run an import first)';
+  }
+  function renderDebug() {
+    btnDebug.style.background = '#4f614d';
+    btnSnapshot.style.background = '#2a2a44';
+    content.textContent = hasDebug
+      ? _liDebug.map(entry => {
+          const { event, ts: _ts, elapsed, ...rest } = entry;
+          const time = elapsed != null ? `+${(elapsed / 1000).toFixed(1)}s` : '';
+          return `[${time}] ${event}  ${JSON.stringify(rest, null, 2)}`;
+        }).join('\n\n')
+      : '(no debug trace)';
+  }
+
+  btnSnapshot.addEventListener('click', renderSnapshot);
+  btnDebug.addEventListener('click', renderDebug);
+
+  tabBar.append(btnSnapshot, btnDebug, btnDownload);
+  panel.append(tabBar, content);
+  overlay.appendChild(panel);
+  overlay.addEventListener('click', (ev) => { if (ev.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+
+  // Default view: Scrape Snapshot (the thing we're validating right now)
+  if (hasSnapshot) renderSnapshot();
+  else renderDebug();
+});
+
 // ─── Initialisation ───────────────────────────────────────────────────────────
 
 /**
@@ -1920,6 +2215,9 @@ async function init() {
   }
   // Always render the intake flow, even if data loading failed
   renderIntakeFlow();
+
+  // Check first-time vs returning user for LinkedIn import UI
+  initLinkedInImportUI();
 }
 
 // ─── HTML escaping utilities ──────────────────────────────────────────────────

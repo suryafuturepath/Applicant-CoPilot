@@ -939,10 +939,55 @@ async function handleTestConnection() {
  */
 async function handleParseResume(rawText) {
   const settings = await getSettings();
-  if (!settings.apiKey) throw new Error('No API key configured. Go to Profile → AI Settings.');
+  const signedIn = await isSignedIn();
+  const useBackend = settings.useBackend !== false && signedIn;
+
+  const parseInstruction = `Parse this resume text into structured JSON. Extract ALL information — do not skip sections.
+Return ONLY a JSON object (no markdown, no extra text):
+{
+  "name": "Full Name",
+  "email": "email@example.com",
+  "phone": "phone number",
+  "location": "City, State or Country",
+  "linkedin": "LinkedIn URL or empty string",
+  "website": "portfolio/website URL or empty string",
+  "summary": "professional summary paragraph",
+  "skills": ["skill1", "skill2", "...all skills found"],
+  "experience": [
+    { "title": "Job Title", "company": "Company Name", "dates": "Start – End", "description": "responsibilities and achievements as a paragraph" }
+  ],
+  "education": [
+    { "degree": "Degree Name", "school": "School Name", "dates": "Start – End", "details": "GPA, honors, relevant coursework" }
+  ],
+  "certifications": ["cert1", "cert2"],
+  "projects": [
+    { "name": "Project Name", "description": "what it does and your role", "technologies": ["tech1", "tech2"] }
+  ]
+}`;
+
+  // ── Backend path ──────────────────────────────────────────────────────
+  if (useBackend) {
+    try {
+      const result = await callEdgeFunction('generate-answer', {
+        question: parseInstruction,
+        jd_text: rawText.substring(0, 12000),
+        max_tokens: 4096,
+        action_type: 'resume_parse',
+      });
+      if (result?.answer) {
+        return parseJSONResponse(result.answer);
+      }
+      console.warn('[EDGE][parseResume] Got 200 but answer is falsy — falling back to local AI');
+    } catch (err) {
+      console.warn('[EDGE][parseResume] FAILED:', err.message, '— falling back to local AI');
+    }
+  }
+
+  // ── Local path ────────────────────────────────────────────────────────
+  if (!settings.apiKey) throw new Error('No API key configured. Sign in with Google or go to Profile → AI Settings.');
 
   const prompts = await getCustomPrompts();
-  const messages = buildResumeParsePrompt(rawText, prompts.resumeParse);
+  const messages = buildResumeParsePrompt(rawText, prompts.resumeParse || parseInstruction);
   const result = await callAI(settings.provider, settings.apiKey, messages, {
     model: settings.model,
     temperature: 0.1,
@@ -2601,6 +2646,830 @@ const handlers = {
     delete saved[msg.key];
     await chrome.storage.local.set({ customPrompts: saved });
     return { success: true, defaultValue: DEFAULT_PROMPTS[msg.key] };
+  },
+
+  // ── LinkedIn profile import ────────────────────────────────────────────
+  // Multi-step orchestration: opens a LinkedIn tab (active, for full SPA
+  // rendering), navigates through profile → experience → education →
+  // skills → certifications pages, injects scraper at each step, then
+  // merges data into profile + applicantContext.
+  //
+  // v2 fixes: proper navigation wait (loading→complete), content-ready
+  // polling, active tab for SPA rendering, per-phase error isolation,
+  // overall timeout, transparent merge reporting with skip tracking.
+
+  'START_LINKEDIN_IMPORT': async () => {
+    // v3: Multi-page deep scrape. Visit 5 detail pages, wait for full
+    // render on each (multi-signal readiness), scroll + click Show-more
+    // to load all items, then scrape. Overwrite target profile arrays.
+    // Tab stays visible (active:true) so LinkedIn's SPA renders properly
+    // and the user can see progress. No basics/person scraping.
+    const IMPORT_TIMEOUT = 90_000;  // 90s — ~8s per page + headroom
+    const NAV_TIMEOUT = 12_000;
+    const PAGE_READY_TIMEOUT = 10_000;
+    const debugLog = [];
+    const importStart = Date.now();
+
+    function dbg(event, data = {}) {
+      const entry = { event, ...data, ts: Date.now(), elapsed: Date.now() - importStart };
+      debugLog.push(entry);
+      console.log('[AC][li-import]', event, data);
+      // Fire-and-forget persist — so debug log survives even if handler crashes
+      chrome.storage.local.set({ _liDebug: debugLog }).catch(() => {});
+    }
+
+    dbg('IMPORT_START');
+
+    // ── Target pages ────────────────────────────────────────────────────
+    // Five dedicated detail pages. Each has a simpler DOM than the main
+    // profile and exposes every entry (not just the 2-4 previewed on /in/me).
+    const PAGE_URLS = [
+      { key: 'experience',     url: 'https://www.linkedin.com/in/me/details/experience/' },
+      { key: 'education',      url: 'https://www.linkedin.com/in/me/details/education/' },
+      { key: 'certifications', url: 'https://www.linkedin.com/in/me/details/certifications/' },
+      { key: 'projects',       url: 'https://www.linkedin.com/in/me/details/projects/' },
+      { key: 'skills',         url: 'https://www.linkedin.com/in/me/details/skills/' },
+    ];
+
+    // ── Scraper (injected into LinkedIn detail page via executeScript) ──
+    // Dispatched by `pageKey` (one of experience|education|certifications|
+    // projects|skills).  Returns an array matching the key. Selector
+    // strategy adapted from Yale3 (MIT, https://github.com/KartikayKaul/Yale3).
+    // Self-contained — no outer closures (MV3 requirement).
+    function injectedScraper(pageKey) {
+      // Universal entry finder — works on all detail pages (exp/edu/cert/proj).
+      // Every entry has at least one edit-form link of shape:
+      //   /details/<pageKey>/edit/forms/<formId>/
+      // Some pages wrap <p> content inside this link (exp/edu/proj), others
+      // only expose it as the pencil button (cert). Either way, walking up
+      // from the link to the nearest ancestor containing a <figure> gives us
+      // the entry wrapper.
+      //
+      // Returns array of { id, wrapper, link } in DOM order.
+      function findEntriesViaEditLinks(pageKey) {
+        const links = Array.from(document.querySelectorAll(
+          `main a[href*="/details/${pageKey}/edit/forms/"]`
+        ));
+        const byId = new Map();
+        for (const link of links) {
+          const href = link.getAttribute('href') || '';
+          const m = href.match(/\/edit\/forms\/(\d+)\//);
+          if (!m) continue;
+          const id = m[1];
+          const hasPs = !!link.querySelector('p');
+          // Prefer content links (with <p>s) over pencil buttons
+          const existing = byId.get(id);
+          if (!existing || (hasPs && !existing.hasPs)) {
+            byId.set(id, { link, hasPs });
+          }
+        }
+        const entries = [];
+        for (const [id, { link }] of byId) {
+          let wrapper = link.parentElement;
+          // Walk up to the nearest ancestor containing BOTH a <figure>
+          // (logo) AND the original link (sanity). Stop before <main>.
+          while (wrapper && wrapper.tagName !== 'MAIN' && wrapper !== document.body) {
+            if (wrapper.querySelector('figure')) break;
+            wrapper = wrapper.parentElement;
+          }
+          if (wrapper && wrapper.tagName !== 'MAIN' && wrapper !== document.body) {
+            entries.push({ id, wrapper, link });
+          }
+        }
+        // De-duplicate by wrapper (multi-role sub-items may share a wrapper
+        // if we walked too far up — keep only distinct wrappers)
+        const seen = new Set();
+        const unique = [];
+        for (const e of entries) {
+          if (seen.has(e.wrapper)) continue;
+          seen.add(e.wrapper);
+          unique.push(e);
+        }
+        return unique;
+      }
+
+
+      function getDescription(entry) {
+        const el = entry.querySelector('span[data-testid="expandable-text-box"]');
+        return el ? (el.textContent || '').trim() : '';
+      }
+
+      // Heuristic: detect date-ish strings like "Dec 2025 - Present", "2020 - 2024", "3 yrs 5 mos", "Issued Nov 2025"
+      function isDateLike(s) {
+        return /\b(19|20)\d{2}\b|·\s*\d+\s*(yr|mo|yrs|mos)|present|issued/i.test(s);
+      }
+
+      // Collect <p>s in DOM order from a root element, excluding:
+      // - paragraphs inside skill-association overlay links
+      // - paragraphs inside the expandable-text-box (those are descriptions)
+      function collectEntryParagraphs(root) {
+        return Array.from(root.querySelectorAll('p'))
+          .filter(p => !p.closest('a[href*="skill-associations-details"]'))
+          .filter(p => !p.querySelector('span[data-testid="expandable-text-box"]'))
+          .map(p => (p.textContent || '').trim())
+          .filter(Boolean);
+      }
+
+      const _diag = {
+        pageKey,
+        url: window.location.href,
+        title: document.title,
+        itemsFound: 0,
+        // Always include diagnostic signals so we can see what DID render
+        // even when our selectors miss:
+        mainExists: !!document.querySelector('main'),
+        mainChildren: document.querySelector('main')?.children?.length || 0,
+        ulCount: document.querySelectorAll('main ul').length,
+        liCount: document.querySelectorAll('main li').length,
+        sectionCount: document.querySelectorAll('main section').length,
+        bodyBytes: document.body?.innerHTML?.length || 0,
+      };
+
+      // ── Experience ─────────────────────────────────────────────────
+      // Structure varies by entry type:
+      // Single-role (entry link has forms/<id> and contains <p>s):
+      //   <p> Product Manager
+      //   <p> FuturePath AI · Full-time
+      //   <p> Dec 2025 - Present · 5 mos
+      //   <p> Remote
+      //   <span data-testid="expandable-text-box">description</span>
+      //
+      // Multi-role: outer block has company + company-level meta <p>s
+      // NOT wrapped in an edit link, then a sibling <ul> where each <li>
+      // has its OWN edit link (one per role).
+      if (pageKey === 'experience') {
+        const results = [];
+        const entries = findEntriesViaEditLinks('experience');
+        _diag.itemsFound = entries.length;
+
+        // Multi-role detection: walk up to the company block that owns multiple
+        // sub-entries, find the org name via p._9e0a5e68 NOT inside any edit link.
+        function findCompanyForEntry(entryWrapper) {
+          const totalEditLinks = document.querySelectorAll(
+            'a[href*="/details/experience/edit/forms/"]'
+          ).length;
+          let ancestor = entryWrapper.parentElement;
+          for (let depth = 0; depth < 6 && ancestor && ancestor.tagName !== 'MAIN'; depth++) {
+            const subEntries = ancestor.querySelectorAll(
+              'a[href*="/details/experience/edit/forms/"]'
+            );
+            // Company block: has >=2 edit-links but is NOT the whole-page container
+            if (subEntries.length >= 2 && subEntries.length < totalEditLinks) {
+              // Org name: p._9e0a5e68 that is NOT inside any edit-form link
+              for (const p of ancestor.querySelectorAll('p._9e0a5e68')) {
+                if (!p.closest('a[href*="/edit/forms/"]')) {
+                  const text = (p.textContent || '').trim();
+                  if (text && !isDateLike(text) && !/^\d+\s*(yr|mo)/.test(text)) {
+                    return text;
+                  }
+                }
+              }
+              break;
+            }
+            ancestor = ancestor.parentElement;
+          }
+          return '';
+        }
+
+        for (const { wrapper } of entries) {
+          const description = getDescription(wrapper);
+          const allPsText = Array.from(wrapper.querySelectorAll('p'))
+            .map(p => (p.textContent || '').trim())
+            .filter(Boolean);
+
+          // Company line: p.b424f291 = "CompanyName · Employment Type"
+          // Present only in single-role entries. Absent in multi-role sub-entries.
+          const companyEl = wrapper.querySelector('p.b424f291');
+          const companyRaw = companyEl ? (companyEl.textContent || '').trim() : '';
+
+          // Title: p._9e0a5e68 = bold title text (role title OR org name in multi-role)
+          // wrapper.querySelector finds the first one INSIDE the wrapper (= role title).
+          // Org names for multi-role are ABOVE the wrapper, so not matched here.
+          const titleEl = wrapper.querySelector('p._9e0a5e68');
+          const title = titleEl ? (titleEl.textContent || '').trim() : '';
+
+          let company, dates;
+          if (companyRaw) {
+            // Single-role: company line present
+            company = companyRaw.split(/\s+·\s+/)[0].trim();
+            dates = allPsText.find(isDateLike) || '';
+          } else {
+            // Multi-role sub-entry: company is the outer org block name
+            company = findCompanyForEntry(wrapper);
+            dates = allPsText.find(isDateLike) || '';
+          }
+
+          if (title || company) {
+            results.push({ title, company, dates, description });
+          }
+        }
+        return { items: results, _diag };
+      }
+
+      // ── Education ──────────────────────────────────────────────────
+      // Link contains: <p>School</p><p>Degree, Field</p><p>2017 – 2021</p>
+      // Wrapper may also have: Grade, Activities (paragraphs outside link)
+      if (pageKey === 'education') {
+        const results = [];
+        const entries = findEntriesViaEditLinks('education');
+        _diag.itemsFound = entries.length;
+        for (const { wrapper, link } of entries) {
+          const linkPs = collectEntryParagraphs(link);
+          const school = linkPs[0] || '';
+          const degree = linkPs[1] && !isDateLike(linkPs[1]) ? linkPs[1] : '';
+          const dates = linkPs.find(isDateLike) || '';
+
+          // Grade / Activities are <p>s inside wrapper but outside link
+          const wrapperPs = collectEntryParagraphs(wrapper)
+            .filter(t => !linkPs.includes(t));
+          const extras = wrapperPs.join(' · ');
+          const description = getDescription(wrapper);
+          const details = [description, extras].filter(Boolean).join('\n');
+
+          if (school) {
+            results.push({ degree, school, dates, details });
+          }
+        }
+        return { items: results, _diag };
+      }
+
+      // ── Certifications ─────────────────────────────────────────────
+      // Cert wrappers have NO content edit-link around <p>s (only pencil).
+      // But they do have at least one /details/certifications/edit/forms/<id>/
+      // link as the pencil button. We collect wrappers from those, then pull
+      // all <p>s directly from the wrapper.
+      if (pageKey === 'certifications') {
+        const results = [];
+        const entries = findEntriesViaEditLinks('certifications');
+        _diag.itemsFound = entries.length;
+        for (const { wrapper } of entries) {
+          const ps = collectEntryParagraphs(wrapper);
+          // ps[0] = cert name, ps[1] = issuer, ps[2] = Issued Mmm YYYY
+          const name = ps[0] || '';
+          const issuer = ps[1] && !isDateLike(ps[1]) ? ps[1] : '';
+          if (name) {
+            results.push(issuer ? `${name} (${issuer})` : name);
+          }
+        }
+        return { items: results, _diag };
+      }
+
+      // ── Projects ───────────────────────────────────────────────────
+      // Same edit-form link pattern: /details/projects/edit/forms/<id>/
+      if (pageKey === 'projects') {
+        const results = [];
+        const entries = findEntriesViaEditLinks('projects');
+        _diag.itemsFound = entries.length;
+        for (const { wrapper, link } of entries) {
+          const linkPs = collectEntryParagraphs(link);
+          const wrapperPs = collectEntryParagraphs(wrapper);
+          // Name is the first bold paragraph — prefer link scope, else wrapper
+          const name = (linkPs[0] || wrapperPs[0] || '').trim();
+          const description = getDescription(wrapper);
+
+          // Skills anchor: <a href*="skill-associations-details"><p>Skills: X, Y, +N skills</p></a>
+          const techP = wrapper.querySelector('a[href*="skill-associations-details"] p');
+          let technologies = [];
+          if (techP) {
+            const raw = (techP.textContent || '').replace(/^Skills:\s*/i, '').trim();
+            technologies = raw
+              .split(/[,·•]/)
+              .map(s => s.trim())
+              .filter(Boolean)
+              .filter(s => !/^\+\d+\s*skills?$/i.test(s));
+          }
+
+          if (name) {
+            results.push({ name, description, technologies });
+          }
+        }
+        return { items: results, _diag };
+      }
+
+      // ── Skills ─────────────────────────────────────────────────────
+      // Skills page structure: edit link contains ONLY an SVG icon (no <p>s).
+      // Skills without endorsements have no <figure> → findEntriesViaEditLinks
+      // discards them. Instead: read aria-label="Edit {Name} skill" directly,
+      // use componentkey wrapper as fallback. Covers all skills regardless of
+      // whether they have endorsements.
+      if (pageKey === 'skills') {
+        const editLinks = Array.from(document.querySelectorAll(
+          'main a[href*="/details/skills/edit/forms/"]'
+        ));
+        _diag.itemsFound = editLinks.length;
+
+        const seenIds = new Set();
+        const results = [];
+
+        for (const link of editLinks) {
+          const href = link.getAttribute('href') || '';
+          const m = href.match(/\/edit\/forms\/(\d+)\//);
+          if (!m) continue;
+          const id = m[1];
+          if (seenIds.has(id)) continue;
+          seenIds.add(id);
+
+          // Primary: aria-label is always "Edit {Skill Name} skill"
+          const ariaLabel = link.getAttribute('aria-label') || '';
+          const nameFromAria = ariaLabel.replace(/^Edit\s+/i, '').replace(/\s+skill$/i, '').trim();
+          if (nameFromAria) {
+            results.push(nameFromAria);
+            continue;
+          }
+
+          // Fallback: first <p> inside the componentkey wrapper
+          const compWrapper = link.closest('[componentkey*="profile.skill"]');
+          if (compWrapper) {
+            const nameEl = compWrapper.querySelector('p');
+            const name = (nameEl?.textContent || '').trim();
+            if (name) results.push(name);
+          }
+        }
+
+        return { items: results, _diag };
+      }
+
+      return { items: [], _diag };
+    }
+
+    // ── waitForNavigation ───────────────────────────────────────────────
+    // Waits for a tab to transition: loading → complete.
+    // Unlike the old waitForTabLoad, this ONLY resolves once the NEW
+    // navigation fires 'loading', then waits for 'complete'. Prevents
+    // resolving on stale status from the previous page.
+    // Fallback: if loading is never seen but complete arrives, resolve
+    // after a brief grace period (handles cases where loading was missed).
+    function waitForNavigation(tid, timeoutMs = 15000) {
+      return new Promise((resolve, reject) => {
+        let sawLoading = false;
+        let completeWithoutLoading = false;
+        const timer = setTimeout(() => {
+          chrome.tabs.onUpdated.removeListener(onUpdate);
+          // On timeout, check if tab is actually complete already
+          chrome.tabs.get(tid).then(t => {
+            if (t?.status === 'complete') resolve();
+            else reject(new Error('Navigation timeout'));
+          }).catch(() => reject(new Error('Navigation timeout — tab gone')));
+        }, timeoutMs);
+
+        function onUpdate(tabId, info) {
+          if (tabId !== tid) return;
+          if (info.status === 'loading') {
+            sawLoading = true;
+            completeWithoutLoading = false;
+          }
+          if (info.status === 'complete') {
+            if (sawLoading) {
+              // Normal path: saw loading then complete
+              chrome.tabs.onUpdated.removeListener(onUpdate);
+              clearTimeout(timer);
+              resolve();
+            } else if (!completeWithoutLoading) {
+              // Edge case: missed the loading event (already loaded).
+              // Wait 500ms for a potential redirect's loading event.
+              completeWithoutLoading = true;
+              setTimeout(() => {
+                if (!sawLoading) {
+                  // No redirect came — tab is genuinely loaded
+                  chrome.tabs.onUpdated.removeListener(onUpdate);
+                  clearTimeout(timer);
+                  resolve();
+                }
+              }, 500);
+            }
+          }
+        }
+        chrome.tabs.onUpdated.addListener(onUpdate);
+      });
+    }
+
+    // ── waitForPageReady ────────────────────────────────────────────────
+    // Multi-signal readiness detection — only resolves when ALL of these
+    // are true on the detail page:
+    //   1. At least one list item is present (main ul.pvs-list > li, etc.)
+    //   2. No active spinners (.artdeco-loader, .ember-loading-indicator)
+    //   3. scrollHeight stable for 2 consecutive polls (~600ms)
+    // Also detects login/authwall — resolves with { authwall: true }.
+    // Never rejects — times out gracefully so scrape can still attempt.
+    async function waitForPageReady(tid, maxWait) {
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId: tid },
+        func: (maxMs) => {
+          return new Promise(resolve => {
+            const interval = 300;
+            let elapsed = 0;
+            let lastHeight = -1;
+            let stableCount = 0;
+
+            (function poll() {
+              // Authwall / login detection first
+              if (document.querySelector('.authwall-join-form, .join-form') ||
+                  location.pathname.includes('/login') ||
+                  location.pathname.includes('/authwall') ||
+                  location.pathname.includes('/checkpoint')) {
+                resolve({
+                  ready: false,
+                  authwall: true,
+                  url: location.href,
+                  title: document.title,
+                });
+                return;
+              }
+
+              // Any substantial list content in <main> counts as ready
+              const listItems = document.querySelectorAll('main li, main section');
+              const spinners = document.querySelectorAll(
+                '.artdeco-loader:not([aria-hidden="true"]), .ember-loading-indicator'
+              );
+              const h = document.documentElement.scrollHeight;
+
+              const hasItems = listItems.length > 0;
+              const noSpinners = spinners.length === 0;
+
+              if (h === lastHeight) stableCount += 1;
+              else stableCount = 0;
+              lastHeight = h;
+
+              const stable = stableCount >= 2;
+
+              if (hasItems && noSpinners && stable) {
+                resolve({
+                  ready: true,
+                  authwall: false,
+                  itemCount: listItems.length,
+                  scrollHeight: h,
+                  url: location.href,
+                  title: document.title,
+                });
+                return;
+              }
+
+              elapsed += interval;
+              if (elapsed >= maxMs) {
+                resolve({
+                  ready: false,
+                  authwall: false,
+                  itemCount: listItems.length,
+                  scrollHeight: h,
+                  stable,
+                  hasItems,
+                  noSpinners,
+                  timedOut: true,
+                  url: location.href,
+                  title: document.title,
+                });
+                return;
+              }
+              setTimeout(poll, interval);
+            })();
+          });
+        },
+        args: [maxWait],
+      });
+      return result?.result || { ready: false, url: '', title: '' };
+    }
+
+    // ── loadAllContent ──────────────────────────────────────────────────
+    // Aggressively loads every item on a detail page:
+    //   1. Scrolls top → bottom in 500px steps (triggers lazy-load)
+    //   2. Waits for scrollHeight to stabilize (max 6 passes)
+    //   3. Clicks every "Show more" / "see more" button
+    //   4. One final scroll + wait for late-loaded content
+    async function loadAllContent(tid) {
+      try {
+        const [r] = await chrome.scripting.executeScript({
+          target: { tabId: tid },
+          func: async () => {
+            // 1. Scroll loop with scrollHeight stabilization (fast passes)
+            let lastHeight = 0;
+            let stableCount = 0;
+            for (let pass = 0; pass < 3; pass++) {
+              const step = 500;
+              for (let pos = 0; pos < document.documentElement.scrollHeight; pos += step) {
+                window.scrollTo({ top: pos, behavior: 'instant' });
+                await new Promise(r => setTimeout(r, 60));
+              }
+              window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' });
+              await new Promise(r => setTimeout(r, 600));
+              const h = document.documentElement.scrollHeight;
+              if (h === lastHeight) stableCount += 1;
+              else stableCount = 0;
+              lastHeight = h;
+              if (stableCount >= 2) break;
+            }
+
+            // 2. Click every "Show more" / "see more" / expand button
+            const buttonSelectors = [
+              'button.inline-show-more-text__button',
+              'button[aria-label*="Show more"]',
+              'button[aria-label*="see more"]',
+              'main button[aria-expanded="false"]',
+            ];
+            let clicked = 0;
+            for (const sel of buttonSelectors) {
+              const btns = document.querySelectorAll(sel);
+              for (const b of btns) {
+                try { b.click(); clicked += 1; } catch (_) {}
+              }
+            }
+            if (clicked > 0) await new Promise(r => setTimeout(r, 400));
+
+            // 3. Quick final pass for late-loaded content
+            window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' });
+            await new Promise(r => setTimeout(r, 400));
+            window.scrollTo({ top: 0, behavior: 'instant' });
+
+            return {
+              finalHeight: document.documentElement.scrollHeight,
+              buttonsClicked: clicked,
+            };
+          },
+        });
+        return r?.result || {};
+      } catch (_) { return {}; }
+    }
+
+    // ── pageDiagnostic — captures DOM metadata for debugging ────────────
+    async function pageDiagnostic(tid) {
+      try {
+        const [r] = await chrome.scripting.executeScript({
+          target: { tabId: tid },
+          func: () => ({
+            url: location.href,
+            title: document.title,
+            h1: document.querySelector('h1')?.innerText?.substring(0, 100) || '',
+            bodyLen: document.body?.innerHTML?.length || 0,
+            listItems: document.querySelectorAll('li').length,
+          }),
+        });
+        return r?.result || {};
+      } catch (_) { return {}; }
+    }
+
+    // ── Main execution ──────────────────────────────────────────────────
+    let tabId = null;
+    const allData = {
+      experience: [],
+      education: [],
+      certifications: [],
+      projects: [],
+      skills: [],
+    };
+    const snapshots = {}; // per-page snapshots for debug visibility
+    const phaseResults = [];
+
+    try {
+      // Open LinkedIn tab. Must be active:true — background tabs don't
+      // render LinkedIn's React SPA properly.  Tab stays visible through
+      // all 5 pages so the user can see progress.
+      const firstPage = PAGE_URLS[0];
+      const tab = await chrome.tabs.create({ url: firstPage.url, active: true });
+      tabId = tab.id;
+      dbg('TAB_CREATED', { tabId, firstUrl: firstPage.url });
+
+      // Wait for initial navigation
+      await waitForNavigation(tabId, NAV_TIMEOUT);
+      dbg('INITIAL_NAV_DONE');
+
+      // ── Login/authwall detection on first page ─────────────────────
+      const initDiag = await pageDiagnostic(tabId);
+      dbg('INITIAL_PAGE', initDiag);
+
+      const initUrl = (initDiag.url || '').toLowerCase();
+      if (initUrl.includes('/login') || initUrl.includes('/authwall') ||
+          initUrl.includes('/checkpoint') || initUrl.includes('/uas/')) {
+        dbg('LOGIN_REQUIRED', { url: initDiag.url });
+        try { await chrome.tabs.remove(tabId); } catch (_) {}
+        await chrome.storage.local.set({ _liDebug: debugLog });
+        return {
+          success: false,
+          error: 'NOT_LOGGED_IN',
+          message: 'Please log into LinkedIn in this browser first, then try again.',
+        };
+      }
+
+      // ── Page loop ──────────────────────────────────────────────────
+      for (let i = 0; i < PAGE_URLS.length; i++) {
+        const { key, url } = PAGE_URLS[i];
+
+        if (Date.now() - importStart > IMPORT_TIMEOUT) {
+          dbg('OVERALL_TIMEOUT', { key });
+          break;
+        }
+
+        try {
+          dbg('PAGE_START', { key, url, index: i });
+
+          // Stepper UI sync
+          await chrome.storage.local.set({
+            linkedinImport: { phase: key, tabId, pending: true, index: i, total: PAGE_URLS.length },
+          });
+
+          // Navigate to this page (first page already loaded from tab creation)
+          if (i > 0) {
+            const navPromise = waitForNavigation(tabId, NAV_TIMEOUT);
+            await chrome.tabs.update(tabId, { url });
+            await navPromise;
+            dbg('NAV_COMPLETE', { key });
+          }
+
+          // Wait for the page to be truly ready (multi-signal)
+          const readiness = await waitForPageReady(tabId, PAGE_READY_TIMEOUT);
+          dbg('PAGE_READY', { key, ...readiness });
+
+          if (readiness.authwall) {
+            dbg('AUTHWALL_MID_IMPORT', { key });
+            phaseResults.push({ key, success: false, error: 'authwall' });
+            continue;
+          }
+
+          // Aggressive load — scroll + expand all "Show more" buttons
+          const loadStats = await loadAllContent(tabId);
+          dbg('LOAD_DONE', { key, ...loadStats });
+
+          // Extract data
+          const results = await chrome.scripting.executeScript({
+            target: { tabId },
+            func: injectedScraper,
+            args: [key],
+          });
+
+          const extracted = results?.[0]?.result || { items: [], _diag: {} };
+          const items = extracted.items || [];
+
+          dbg('SCRAPE_RESULT', {
+            key,
+            itemCount: items.length,
+            firstItem: items[0],
+            diag: extracted._diag,
+          });
+
+          // Capture snapshot for debug visibility (parsed items + diag)
+          snapshots[key] = {
+            key,
+            url: extracted._diag?.url || url,
+            title: extracted._diag?.title || '',
+            scrapedAt: Date.now(),
+            itemCount: items.length,
+            items,
+            diag: extracted._diag || {},
+          };
+
+          allData[key] = items;
+          phaseResults.push({ key, success: true, count: items.length });
+
+        } catch (err) {
+          dbg('PAGE_ERROR', { key, error: err.message });
+          phaseResults.push({ key, success: false, error: err.message });
+          // Continue to next page
+        }
+      }
+
+    } catch (err) {
+      dbg('IMPORT_ERROR', { error: err.message });
+    } finally {
+      if (tabId) { try { await chrome.tabs.remove(tabId); } catch (_) {} }
+      await chrome.storage.local.remove('linkedinImport');
+    }
+
+    dbg('SCRAPING_COMPLETE', {
+      pages: phaseResults,
+      counts: {
+        experience: allData.experience.length,
+        education: allData.education.length,
+        certifications: allData.certifications.length,
+        projects: allData.projects.length,
+        skills: allData.skills.length,
+      },
+    });
+
+    // ── Build markdown snapshot for debug visibility ────────────────────
+    function buildSnapshotMarkdown(snaps) {
+      const order = ['experience', 'education', 'certifications', 'projects', 'skills'];
+      const lines = [`# LinkedIn Import Snapshot`, ``, `Generated: ${new Date().toISOString()}`, ``];
+      for (const k of order) {
+        const s = snaps[k];
+        lines.push(`---`, ``, `## ${k.charAt(0).toUpperCase() + k.slice(1)}  (${s?.itemCount ?? 0} items)`, ``);
+        if (!s) {
+          lines.push(`_No snapshot captured (page may have failed)._`, ``);
+          continue;
+        }
+        lines.push(`- URL: ${s.url}`);
+        lines.push(`- Title: ${s.title}`);
+        lines.push(`- Scraped at: ${new Date(s.scrapedAt).toISOString()}`);
+        lines.push(`- Diagnostic: \`${JSON.stringify(s.diag)}\``, ``);
+
+        lines.push(`### Items`, ``);
+        if (s.items.length === 0) {
+          lines.push(`_(none — selectors may have failed for this page)_`, ``);
+        } else {
+          s.items.forEach((item, i) => {
+            const body = typeof item === 'string' ? item : JSON.stringify(item, null, 2);
+            lines.push(`${i + 1}. \`\`\``, body, `\`\`\``);
+          });
+          lines.push(``);
+        }
+      }
+      return lines.join('\n');
+    }
+
+    const snapshotMd = buildSnapshotMarkdown(snapshots);
+    await chrome.storage.local.set({ _liSnapshot: snapshots, _liSnapshotMd: snapshotMd });
+    dbg('SNAPSHOT_PERSISTED', { keys: Object.keys(snapshots), mdBytes: snapshotMd.length });
+
+    // ── Phase 1: Normalize scraped data ────────────────────────────────
+    // Strip LinkedIn's appended duration suffix from date strings.
+    // "Dec 2025 - Present · 5 mos" → "Dec 2025 - Present"
+    // "Self-employed · 5 mos" → "" (no year or "present" → discard)
+    function normalizeDate(d) {
+      if (!d) return '';
+      // Remove " · N yr(s)/mo(s)" duration suffix and anything after it
+      const stripped = d.replace(/\s*·\s*\d+.*$/i, '').trim();
+      // Discard if no year (19xx/20xx) and no "present" — it's not a real date range
+      return /\b(19|20)\d{2}\b|present/i.test(stripped) ? stripped : '';
+    }
+
+    allData.experience = allData.experience.map(e => ({
+      ...e,
+      dates: normalizeDate(e.dates),
+    }));
+
+    allData.education = allData.education.map(e => ({
+      ...e,
+      dates: normalizeDate(e.dates),
+    }));
+
+    // Drop company-block-leak entries: outer company group blocks (e.g. Wipro)
+    // leak through as entries where company = an employment-type word and dates
+    // is empty. "Self-employed" is intentionally excluded — it's a valid
+    // company equivalent for solo builders / freelancers.
+    const EMPLOYMENT_TYPE = /^(full-time|part-time|contract|internship|freelance|temporary)$/i;
+    allData.experience = allData.experience.filter(
+      e => !(normalizeDate(e.dates) === '' && EMPLOYMENT_TYPE.test((e.company || '').trim()))
+    );
+
+    // ── Phase 2: Per-section merge ──────────────────────────────────────
+    // Replace: experience, education, projects  (LinkedIn is authoritative)
+    // Union:   skills, certifications           (preserve manually-added items)
+    const { profile: existingProfile } = await chrome.storage.local.get('profile');
+    const profile = existingProfile || {};
+    const counts    = {};
+    const newCounts = {};
+
+    // Replace sections
+    profile.experience = allData.experience;
+    profile.education  = allData.education;
+    profile.projects   = allData.projects;
+    counts.experience  = allData.experience.length;
+    counts.education   = allData.education.length;
+    counts.projects    = allData.projects.length;
+
+    // Union: skills — scraped items first, then existing-only items appended
+    {
+      const scraped    = allData.skills || [];
+      const existing   = profile.skills || [];
+      const scrapedSet = new Set(scraped.map(s => s.toLowerCase()));
+      const onlyLocal  = existing.filter(s => !scrapedSet.has(s.toLowerCase()));
+      profile.skills   = [...scraped, ...onlyLocal];
+      counts.skills    = profile.skills.length;
+      // newCounts tracks genuinely-new skills (not already in the profile)
+      const existingSet      = new Set(existing.map(s => s.toLowerCase()));
+      newCounts.skills       = scraped.filter(s => !existingSet.has(s.toLowerCase())).length;
+    }
+
+    // Union: certifications — same pattern as skills
+    {
+      const scraped    = allData.certifications || [];
+      const existing   = profile.certifications || [];
+      const scrapedSet = new Set(scraped.map(s => s.toLowerCase()));
+      const onlyLocal  = existing.filter(s => !scrapedSet.has(s.toLowerCase()));
+      profile.certifications = [...scraped, ...onlyLocal];
+      counts.certifications  = profile.certifications.length;
+      const existingSet            = new Set(existing.map(s => s.toLowerCase()));
+      newCounts.certifications     = scraped.filter(s => !existingSet.has(s.toLowerCase())).length;
+    }
+
+    await chrome.storage.local.set({ profile });
+    dbg('MERGE_COMPLETE', { counts, newCounts });
+
+    // ── Completion ─────────────────────────────────────────────────────
+    const totalTime = Date.now() - importStart;
+    const totalItems = Object.values(counts).reduce((sum, n) => sum + n, 0);
+    dbg('IMPORT_DONE', { totalTime, counts, newCounts, totalItems });
+
+    await chrome.storage.local.set({
+      _liDebug: debugLog,
+      linkedinImportDone: new Date().toISOString(),
+      linkedinImportFieldCount: totalItems,
+    });
+
+    return {
+      success: true,
+      counts,
+      newCounts,
+      phaseResults,
+      snapshotMd,
+    };
   },
 
   // ── Storage operations ─────────────────────────────────────────────────
